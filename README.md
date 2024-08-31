@@ -23,8 +23,11 @@ cargo add --git https://github.com/preco21/opencv-match.git
 
 ## Features
 
-* Matching with multiple instances
-* Applies [non-maximum suppression](https://builtin.com/machine-learning/non-maximum-suppression) to prevent duplicate matches
+- **Multiple template matching:** Detects and matches multiple instances of a template within a single image.
+- **Non-maximum suppression:** Integrates [non-maximum suppression](https://builtin.com/machine-learning/non-maximum-suppression) to eliminate duplicate matches.
+- **Directional clustering:** Clusters matching points vertically or horizontally into distinct sections, organizing them into bounding boxes for segmentation.
+
+[TODO: Scale-invariant matching, Angle-invariant matching]
 
 ## Usage
 

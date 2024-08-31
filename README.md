@@ -56,3 +56,5 @@ OPENCV_MSVC_CRT = "static"
 [target.x86_64-pc-windows-msvc]
 rustflags = ["-C", "target-feature=+crt-static"]
 ```
+
+[WIP: Do we need OPENCV_LINK_LIBS explicitly specified?]

@@ -1,0 +1,16 @@
+[package]
+name = "opencv-match"
+version = "0.1.0"
+description = "A Rust library that simplifies template matching with OpenCV"
+authors = ["Preco Plusb <plusb21@gmail.com>"]
+repository = "https://github.com/preco21/opencv-match"
+license = "MIT"
+readme = "README.md"
+edition = "2021"
+
+[dependencies]
+ndarray = { version = "0.16.1", features = ["rayon"] }
+opencv = { version = "0.92.2", default-features = false, features = [
+    "imgproc",
+] }
+powerboxesrs = "0.2.3"

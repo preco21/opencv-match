@@ -9,6 +9,8 @@ readme = "README.md"
 edition = "2021"
 
 [dependencies]
+anyhow = "1.0.86"
+half = "2.4.1"
 ndarray = { version = "0.16.1", features = ["rayon"] }
 opencv = { version = "0.92.2", default-features = false, features = [
     "imgproc",

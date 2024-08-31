@@ -2,11 +2,17 @@
 
 > A Rust library that simplifies template matching with OpenCV
 
+## Prerequisites
+
+This library is built on top of the [OpenCV](https://opencv.org/) library. You will need to have OpenCV installed on your system.
+
+You can find the instructions [here](https://github.com/twistedfall/opencv-rust/blob/master/INSTALL.md).
+
+Currently supports `v0.92.2` of the `opencv` crate.
+
+[TODO: Make version selection more flexible]
+
 ## Install
-
-This library depends on the [OpenCV](https://opencv.org/) library.
-
-You will need to follow the instruction to install OpenCV on your system. You can find the instructions [here](https://github.com/twistedfall/opencv-rust/blob/master/INSTALL.md).
 
 ```shell
 cargo add opencv-match
@@ -14,6 +20,11 @@ cargo add opencv-match
 # Alternatively, pull from the repository directly:
 cargo add --git https://github.com/preco21/opencv-match.git
 ```
+
+## Features
+
+* Matching with multiple instances
+* Applies [non-maximum suppression](https://builtin.com/machine-learning/non-maximum-suppression) to prevent duplicate matches
 
 ## Usage
 

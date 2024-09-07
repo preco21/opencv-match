@@ -1,63 +1,38 @@
 use anyhow::Result;
 use opencv::{self as cv};
 
-use crate::TemplateDescriptor;
+use crate::Template;
 
 #[derive(Debug, Clone)]
 pub struct TemplateMatcher {
-    descriptors: Vec<TemplateDescriptor>,
+    descriptors: Vec<Template>,
 }
 
 impl TemplateMatcher {
-    pub fn new(descriptors: &[TemplateDescriptor]) -> Result<Self> {
+    pub fn new(descriptors: &[Template]) -> Result<Self> {
         Ok(Self {
             descriptors: descriptors.to_vec(),
         })
     }
 
-    pub fn descriptors(&self) -> &[TemplateDescriptor] {
+    pub fn descriptors(&self) -> &[Template] {
         &self.descriptors
     }
 
-    pub fn find_descriptor(&self, label: &str) -> Option<&TemplateDescriptor> {
+    pub fn find_descriptor(&self, label: &str) -> Option<&Template> {
         self.descriptors.iter().find(|d| d.label == label)
     }
 
     pub fn run_match(&self, input: &cv::core::Mat) -> Result<Vec<TemplateMatcherResult>> {
         let mut results = Vec::new();
         for descriptor in &self.descriptors {
-            let mut res = cv::core::Mat::default();
-            if let Some(mask) = &descriptor.mask {
-                cv::imgproc::match_template(
-                    &mat_to_grayscale(input)?,
-                    &descriptor.template,
-                    &mut res,
-                    descriptor
-                        .matching_method
-                        .unwrap_or(cv::imgproc::TM_CCOEFF_NORMED),
-                    mask,
-                )?;
-            } else {
-                cv::imgproc::match_template(
-                    &mat_to_grayscale(input)?,
-                    &descriptor.template,
-                    &mut res,
-                    descriptor
-                        .matching_method
-                        .unwrap_or(cv::imgproc::TM_CCOEFF_NORMED),
-                    &cv::core::no_array(),
-                )?;
-            }
-            results.push(TemplateMatcherResult::new(descriptor.label.clone(), res));
+            results.push(TemplateMatcherResult::new(
+                descriptor.label.clone(),
+                descriptor.run_match(input)?,
+            ));
         }
         Ok(results)
     }
-}
-
-fn mat_to_grayscale(mat: &cv::core::Mat) -> Result<cv::core::Mat> {
-    let mut res = cv::core::Mat::default();
-    cv::imgproc::cvt_color(&mat, &mut res, cv::imgproc::COLOR_RGBA2GRAY, 0)?;
-    Ok(res)
 }
 
 #[derive(Debug, Clone)]

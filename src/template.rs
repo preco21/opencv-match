@@ -1,17 +1,19 @@
 use opencv as cv;
 
+use crate::convert::mat_to_grayscale;
+
 #[derive(Debug, Clone)]
-pub struct TemplateDescriptor {
+pub struct Template {
     pub label: String,
-    pub template: cv::core::Mat,
-    pub mask: Option<cv::core::Mat>,
     pub threshold: f64,
     pub matching_method: Option<i32>,
+    template: cv::core::Mat,
     original_template: cv::core::Mat,
+    mask: Option<cv::core::Mat>,
     original_mask: Option<cv::core::Mat>,
 }
 
-impl TemplateDescriptor {
+impl Template {
     pub fn new(label: String, template: cv::core::Mat, threshold: f64) -> Self {
         Self {
             label,
@@ -108,5 +110,29 @@ impl TemplateDescriptor {
             self.original_mask = Some(res);
         }
         Ok(())
+    }
+
+    pub fn run_match(&self, input: &cv::core::Mat) -> anyhow::Result<cv::core::Mat> {
+        let mut res = cv::core::Mat::default();
+        if let Some(mask) = &self.mask {
+            cv::imgproc::match_template(
+                &mat_to_grayscale(input)?,
+                &self.template,
+                &mut res,
+                self.matching_method
+                    .unwrap_or(cv::imgproc::TM_CCOEFF_NORMED),
+                mask,
+            )?;
+        } else {
+            cv::imgproc::match_template(
+                &mat_to_grayscale(input)?,
+                &self.template,
+                &mut res,
+                self.matching_method
+                    .unwrap_or(cv::imgproc::TM_CCOEFF_NORMED),
+                &cv::core::no_array(),
+            )?;
+        }
+        Ok(res)
     }
 }

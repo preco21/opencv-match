@@ -1,14 +1,7 @@
-pub fn add(left: usize, right: usize) -> usize {
-    left + right
-}
+pub mod cv_convert;
+pub mod scale;
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+mod desc;
+pub use desc::*;
 
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
-}
+mod convert;

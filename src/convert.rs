@@ -1,4 +1,4 @@
-use crate::TryIntoCv;
+use crate::cv_convert::TryIntoCv;
 use anyhow::Result;
 use ndarray as nd;
 use opencv as cv;

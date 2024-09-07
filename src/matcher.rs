@@ -23,7 +23,7 @@ impl TemplateMatcher {
         self.descriptors.iter().find(|d| d.label == label)
     }
 
-    pub fn match_templates(&self, input: &cv::core::Mat) -> Result<Vec<TemplateMatcherResult>> {
+    pub fn run_match(&self, input: &cv::core::Mat) -> Result<Vec<TemplateMatcherResult>> {
         let mut results = Vec::new();
         for descriptor in &self.descriptors {
             let mut res = cv::core::Mat::default();
@@ -48,7 +48,7 @@ impl TemplateMatcher {
                     &cv::core::no_array(),
                 )?;
             }
-            results.push(TemplateMatcherResult::new(res));
+            results.push(TemplateMatcherResult::new(descriptor.label.clone(), res));
         }
         Ok(results)
     }
@@ -62,12 +62,20 @@ fn mat_to_grayscale(mat: &cv::core::Mat) -> Result<cv::core::Mat> {
 
 #[derive(Debug, Clone)]
 pub struct TemplateMatcherResult {
+    label: String,
     match_mat: cv::core::Mat,
 }
 
 impl TemplateMatcherResult {
-    pub(crate) fn new(mat: cv::core::Mat) -> Self {
-        Self { match_mat: mat }
+    pub(crate) fn new(label: String, mat: cv::core::Mat) -> Self {
+        Self {
+            label,
+            match_mat: mat,
+        }
+    }
+
+    pub fn label(&self) -> &str {
+        &self.label
     }
 
     pub fn mat(&self) -> &cv::core::Mat {

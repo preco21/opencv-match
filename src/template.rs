@@ -1,11 +1,12 @@
+use ndarray as nd;
 use opencv as cv;
 
-use crate::convert::mat_to_grayscale;
+use crate::convert::{mat_to_array2, mat_to_grayscale};
 
 #[derive(Debug, Clone)]
 pub struct Template {
     pub label: String,
-    pub threshold: f64,
+    pub threshold: f32,
     pub matching_method: Option<i32>,
     template: cv::core::Mat,
     original_template: cv::core::Mat,
@@ -14,7 +15,7 @@ pub struct Template {
 }
 
 impl Template {
-    pub fn new(label: String, template: cv::core::Mat, threshold: f64) -> Self {
+    pub fn new(label: String, template: cv::core::Mat, threshold: f32) -> Self {
         Self {
             label,
             template: template.clone(),
@@ -30,7 +31,7 @@ impl Template {
         label: String,
         template: cv::core::Mat,
         mask: cv::core::Mat,
-        threshold: f64,
+        threshold: f32,
     ) -> Self {
         Self {
             label,
@@ -134,5 +135,24 @@ impl Template {
             )?;
         }
         Ok(res)
+    }
+
+    pub fn find_best_matches(&self, input: &cv::core::Mat) -> anyhow::Result<Vec<(usize, usize)>> {
+        let res = self.run_match(input)?;
+        let buf = mat_to_array2(&res)?;
+        let indices: Vec<(usize, usize)> = nd::Zip::indexed(&buf).par_fold(
+            || Vec::new(),
+            |mut indices, (i, j), &val| {
+                if val > self.threshold {
+                    indices.push((i, j));
+                }
+                indices
+            },
+            |mut a, b| {
+                a.extend(b);
+                a
+            },
+        );
+        Ok(indices)
     }
 }

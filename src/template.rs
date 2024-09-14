@@ -5,7 +5,6 @@ use crate::convert::{mat_to_array2, mat_to_grayscale};
 
 #[derive(Debug, Clone)]
 pub struct Template {
-    pub label: String,
     pub threshold: f32,
     pub matching_method: Option<i32>,
     template: cv::core::Mat,
@@ -15,9 +14,8 @@ pub struct Template {
 }
 
 impl Template {
-    pub fn new(label: String, template: cv::core::Mat, threshold: f32) -> Self {
+    pub fn new(template: cv::core::Mat, threshold: f32) -> Self {
         Self {
-            label,
             template: template.clone(),
             mask: None,
             threshold,
@@ -27,14 +25,8 @@ impl Template {
         }
     }
 
-    pub fn with_mask(
-        label: String,
-        template: cv::core::Mat,
-        mask: cv::core::Mat,
-        threshold: f32,
-    ) -> Self {
+    pub fn with_mask(template: cv::core::Mat, mask: cv::core::Mat, threshold: f32) -> Self {
         Self {
-            label,
             template: template.clone(),
             mask: Some(mask.clone()),
             threshold,
@@ -44,7 +36,7 @@ impl Template {
         }
     }
 
-    pub fn resize_template(&mut self, width: i32, height: i32) -> anyhow::Result<()> {
+    pub fn resize(&mut self, width: i32, height: i32) -> anyhow::Result<()> {
         let mut res = cv::core::Mat::default();
         cv::imgproc::resize(
             &self.original_template,
@@ -83,7 +75,7 @@ impl Template {
         Ok(())
     }
 
-    pub fn resize_template_scale(&mut self, scale: f64) -> anyhow::Result<()> {
+    pub fn resize_scale(&mut self, scale: f64) -> anyhow::Result<()> {
         let mut res = cv::core::Mat::default();
         cv::imgproc::resize(
             &self.original_template,
@@ -97,7 +89,7 @@ impl Template {
         Ok(())
     }
 
-    pub fn resize_mask_scale(&mut self, scale: f64) -> anyhow::Result<()> {
+    pub fn resize_scale_mask(&mut self, scale: f64) -> anyhow::Result<()> {
         if let Some(mask) = &self.original_mask {
             let mut res = cv::core::Mat::default();
             cv::imgproc::resize(

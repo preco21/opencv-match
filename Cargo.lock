@@ -726,6 +726,7 @@ dependencies = [
  "ndarray 0.16.1",
  "opencv",
  "powerboxesrs",
+ "rayon",
 ]
 
 [[package]]

@@ -1,5 +1,8 @@
 use ndarray as nd;
-use opencv as cv;
+use opencv::{
+    self as cv,
+    core::{kernel_to_str, MatTraitConst},
+};
 
 use crate::convert;
 
@@ -81,6 +84,14 @@ impl Template {
         self.original_mask.as_ref()
     }
 
+    pub fn width(&self) -> i32 {
+        self.template.cols()
+    }
+
+    pub fn height(&self) -> i32 {
+        self.template.rows()
+    }
+
     pub fn resize(&mut self, width: i32, height: i32) -> anyhow::Result<()> {
         let mut res = cv::core::Mat::default();
         cv::imgproc::resize(
@@ -150,7 +161,75 @@ impl Template {
         Ok(())
     }
 
-    pub fn run_match(&self, input: &cv::core::Mat) -> anyhow::Result<cv::core::Mat> {
+    pub fn find_matches(&self, input: &cv::core::Mat) -> anyhow::Result<Vec<(usize, usize)>> {
+        let res = self.find_matches_with_score(input)?;
+        Ok(res.iter().map(|x| x.location).collect())
+    }
+
+    pub fn find_best_matches(&self, input: &cv::core::Mat) -> anyhow::Result<Vec<MatchResult>> {
+        let res = self.find_matches_with_score(input)?;
+        // let (boxes, scores) = res.iter().fold(
+        //     (nd::Array2::<usize>::default((2, 4)), Vec::new()),
+        //     |(mut boxes, mut scores), x| {
+        //         boxes.push(nd::Axis(0), [x.location.0, x.dimension.0, x.location.1, x.dimension.1]);
+        //         scores.push(x.score);
+        //         (boxes, scores)
+        //     },
+        // );
+        // let keep = powerboxesrs::nms::rtree_nms(boxes, scores, iou_threshold, score_threshold)
+
+        let mut boxes_vec = Vec::new();
+        let mut scores = Vec::new();
+
+        for x in res.iter() {
+            // Flatten the [usize; 4] and push it into the boxes_vec
+            boxes_vec.extend_from_slice(&[
+                x.location.0,
+                x.dimension.0,
+                x.location.1,
+                x.dimension.1,
+            ]);
+            scores.push(x.score);
+        }
+
+        let num_boxes = res.len(); // Number of rows
+        let boxes: nd::Array2<usize> = nd::Array2::from_shape_vec((num_boxes, 4), boxes_vec)
+            .map_err(|e| anyhow::anyhow!("Error creating Array2: {:?}", e))?;
+
+        let boxes_view: nd::ArrayView2<usize> = boxes.view();
+
+        // Use ArrayView2 for rtree_nms
+        let keep = powerboxesrs::nms::nms(&boxes.view(), scores, iou_threshold, score_threshold);
+    }
+
+    pub fn find_matches_with_score(
+        &self,
+        input: &cv::core::Mat,
+    ) -> anyhow::Result<Vec<MatchResult>> {
+        let dimension = (self.width() as usize, self.height() as usize);
+        let res = self.run_match(input)?;
+        let buf = convert::mat_to_array2(&res)?;
+        let indices: Vec<MatchResult> = nd::Zip::indexed(&buf).par_fold(
+            || Vec::new(),
+            |mut indices, (i, j), &val| {
+                if val > self.threshold {
+                    indices.push(MatchResult {
+                        location: (i, j),
+                        dimension,
+                        score: val,
+                    });
+                }
+                indices
+            },
+            |mut a, b| {
+                a.extend(b);
+                a
+            },
+        );
+        Ok(indices)
+    }
+
+    fn run_match(&self, input: &cv::core::Mat) -> anyhow::Result<cv::core::Mat> {
         let mut res = cv::core::Mat::default();
         if let Some(mask) = &self.mask {
             cv::imgproc::match_template(
@@ -173,23 +252,11 @@ impl Template {
         }
         Ok(res)
     }
+}
 
-    pub fn find_best_matches(&self, input: &cv::core::Mat) -> anyhow::Result<Vec<(usize, usize)>> {
-        let res = self.run_match(input)?;
-        let buf = convert::mat_to_array2(&res)?;
-        let indices: Vec<(usize, usize)> = nd::Zip::indexed(&buf).par_fold(
-            || Vec::new(),
-            |mut indices, (i, j), &val| {
-                if val > self.threshold {
-                    indices.push((i, j));
-                }
-                indices
-            },
-            |mut a, b| {
-                a.extend(b);
-                a
-            },
-        );
-        Ok(indices)
-    }
+#[derive(Debug)]
+pub struct MatchResult {
+    pub location: (usize, usize),
+    pub dimension: (usize, usize),
+    pub score: f32,
 }

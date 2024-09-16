@@ -1,39 +1,84 @@
 use ndarray as nd;
 use opencv as cv;
 
-use crate::convert::{mat_to_array2, mat_to_grayscale};
+use crate::convert;
 
 #[derive(Debug, Clone)]
 pub struct Template {
-    pub threshold: f32,
-    pub matching_method: Option<i32>,
+    threshold: f32,
+    matching_method: Option<i32>,
     template: cv::core::Mat,
     original_template: cv::core::Mat,
     mask: Option<cv::core::Mat>,
     original_mask: Option<cv::core::Mat>,
 }
 
-impl Template {
-    pub fn new(template: cv::core::Mat, threshold: f32) -> Self {
+#[derive(Debug)]
+pub struct TemplateConfig {
+    /// The threshold to use for matching. If not provided, `0.8` will be used.
+    pub threshold: f32,
+    /// The method to use for matching. If not provided, `TM_CCOEFF_NORMED` will be used.
+    pub matching_method: Option<i32>,
+}
+
+impl Default for TemplateConfig {
+    fn default() -> Self {
         Self {
-            template: template.clone(),
-            mask: None,
-            threshold,
+            threshold: 0.8,
             matching_method: None,
-            original_template: template,
-            original_mask: None,
         }
     }
+}
 
-    pub fn with_mask(template: cv::core::Mat, mask: cv::core::Mat, threshold: f32) -> Self {
-        Self {
+impl Template {
+    pub fn new(template: cv::core::Mat, config: TemplateConfig) -> anyhow::Result<Self> {
+        Ok(Self {
+            threshold: config.threshold,
+            matching_method: config.matching_method,
             template: template.clone(),
-            mask: Some(mask.clone()),
-            threshold,
-            matching_method: None,
             original_template: template,
+            mask: None,
+            original_mask: None,
+        })
+    }
+
+    pub fn with_mask(
+        template: cv::core::Mat,
+        mask: cv::core::Mat,
+        config: TemplateConfig,
+    ) -> anyhow::Result<Self> {
+        Ok(Self {
+            threshold: config.threshold,
+            matching_method: config.matching_method,
+            template: template.clone(),
+            original_template: template,
+            mask: Some(mask.clone()),
             original_mask: Some(mask),
-        }
+        })
+    }
+
+    pub fn threshold(&self) -> f32 {
+        self.threshold
+    }
+
+    pub fn matching_method(&self) -> Option<i32> {
+        self.matching_method
+    }
+
+    pub fn template(&self) -> &cv::core::Mat {
+        &self.template
+    }
+
+    pub fn original_template(&self) -> &cv::core::Mat {
+        &self.original_template
+    }
+
+    pub fn mask(&self) -> Option<&cv::core::Mat> {
+        self.mask.as_ref()
+    }
+
+    pub fn original_mask(&self) -> Option<&cv::core::Mat> {
+        self.original_mask.as_ref()
     }
 
     pub fn resize(&mut self, width: i32, height: i32) -> anyhow::Result<()> {
@@ -109,7 +154,7 @@ impl Template {
         let mut res = cv::core::Mat::default();
         if let Some(mask) = &self.mask {
             cv::imgproc::match_template(
-                &mat_to_grayscale(input)?,
+                input,
                 &self.template,
                 &mut res,
                 self.matching_method
@@ -118,7 +163,7 @@ impl Template {
             )?;
         } else {
             cv::imgproc::match_template(
-                &mat_to_grayscale(input)?,
+                input,
                 &self.template,
                 &mut res,
                 self.matching_method
@@ -131,7 +176,7 @@ impl Template {
 
     pub fn find_best_matches(&self, input: &cv::core::Mat) -> anyhow::Result<Vec<(usize, usize)>> {
         let res = self.run_match(input)?;
-        let buf = mat_to_array2(&res)?;
+        let buf = convert::mat_to_array2(&res)?;
         let indices: Vec<(usize, usize)> = nd::Zip::indexed(&buf).par_fold(
             || Vec::new(),
             |mut indices, (i, j), &val| {

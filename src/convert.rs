@@ -51,7 +51,7 @@ where
     let merged_array = array3.slice(nd::s![1.., .., ..]).reversed_axes();
     // Reshape the merged array to a 2-dimensional array.
     let array2 = merged_array
-        .into_shape_with_order((height, (depth - 1) * width))
+        .to_shape((height, (depth - 1) * width))
         .expect("failed to reshape array");
     array2.to_owned()
 }

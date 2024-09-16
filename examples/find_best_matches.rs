@@ -1,6 +1,5 @@
 use anyhow::Result;
-use opencv as cv;
-use opencv_match::prelude::{TryFromCv, TryIntoCv};
+use opencv_match::prelude::*;
 
 fn main() -> Result<()> {
     let img_tmp = image::open("./examples/up.png")?.to_rgba8();

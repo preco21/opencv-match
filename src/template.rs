@@ -168,40 +168,27 @@ impl Template {
 
     pub fn find_best_matches(&self, input: &cv::core::Mat) -> anyhow::Result<Vec<MatchResult>> {
         let res = self.find_matches_with_score(input)?;
-        // let (boxes, scores) = res.iter().fold(
-        //     (nd::Array2::<usize>::default((2, 4)), Vec::new()),
-        //     |(mut boxes, mut scores), x| {
-        //         boxes.push(nd::Axis(0), [x.location.0, x.dimension.0, x.location.1, x.dimension.1]);
-        //         scores.push(x.score);
-        //         (boxes, scores)
-        //     },
-        // );
-        // let keep = powerboxesrs::nms::rtree_nms(boxes, scores, iou_threshold, score_threshold)
+        let (boxes, scores) = res.iter().fold(
+            (nd::Array2::<f64>::default((res.len(), 4)), Vec::new()),
+            |(mut boxes, mut scores), x| {
+                // FIXME:
+                let _ = boxes.push(
+                    nd::Axis(0),
+                    nd::ArrayView::from(&[
+                        x.location.0 as f64,
+                        x.dimension.0 as f64,
+                        x.location.1 as f64,
+                        x.dimension.1 as f64,
+                    ]),
+                );
+                scores.push(x.score as f64);
+                (boxes, scores)
+            },
+        );
+        // FIXME:
+        let keep = powerboxesrs::nms::rtree_nms(&boxes, &scores, 0.1, 0.1);
 
-        let mut boxes_vec = Vec::new();
-        let mut scores: Vec<f64> = Vec::new();
-
-        for x in res.iter() {
-            // Flatten the [usize; 4] and push it into the boxes_vec
-            boxes_vec.extend_from_slice(&[
-                x.location.0,
-                x.dimension.0,
-                x.location.1,
-                x.dimension.1,
-            ]);
-            scores.push(x.score);
-        }
-
-        let num_boxes = res.len(); // Number of rows
-        let boxes: nd::Array2<usize> = nd::Array2::from_shape_vec((num_boxes, 4), boxes_vec)
-            .map_err(|e| anyhow::anyhow!("Error creating Array2: {:?}", e))?;
-
-        let boxes_view: nd::ArrayView2<usize> = boxes.view();
-
-        let scores: nd::Array1<f64> = nd::Array1::from(scores);
-
-        // Use ArrayView2 for rtree_nms
-        let keep = powerboxesrs::nms::rtree_nms(boxes.into(), scores.into(), 0.1, 0.1);
+        Ok(keep.iter().map(|&i| res[i].clone()).collect())
     }
 
     pub fn find_matches_with_score(
@@ -256,7 +243,7 @@ impl Template {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct MatchResult {
     pub location: (usize, usize),
     pub dimension: (usize, usize),

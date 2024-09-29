@@ -12,7 +12,7 @@ edition = "2021"
 anyhow = "1.0.86"
 half = "2.4.1"
 image = "0.25.2"
-ndarray = { version = "0.16.1", features = ["rayon"] }
+ndarray = { version = "0.15.6", features = ["rayon"] }
 opencv = { version = "0.92.2", default-features = false, features = [
     "imgproc",
 ] }

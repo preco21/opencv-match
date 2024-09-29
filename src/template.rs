@@ -179,7 +179,7 @@ impl Template {
         // let keep = powerboxesrs::nms::rtree_nms(boxes, scores, iou_threshold, score_threshold)
 
         let mut boxes_vec = Vec::new();
-        let mut scores = Vec::new();
+        let mut scores: Vec<f64> = Vec::new();
 
         for x in res.iter() {
             // Flatten the [usize; 4] and push it into the boxes_vec
@@ -198,8 +198,10 @@ impl Template {
 
         let boxes_view: nd::ArrayView2<usize> = boxes.view();
 
+        let scores: nd::Array1<f64> = nd::Array1::from(scores);
+
         // Use ArrayView2 for rtree_nms
-        let keep = powerboxesrs::nms::nms(&boxes.view(), scores, iou_threshold, score_threshold);
+        let keep = powerboxesrs::nms::rtree_nms(boxes.into(), scores.into(), 0.1, 0.1);
     }
 
     pub fn find_matches_with_score(

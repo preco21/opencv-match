@@ -14,10 +14,9 @@ Currently supports `v0.92.2` of the `opencv` crate.
 
 ## Install
 
-```shell
-cargo add opencv-match
+Currently not available on `crates.io`. You can add this library to your `Cargo.toml` with the following command:
 
-# Alternatively, pull from the repository directly:
+```shell
 cargo add --git https://github.com/preco21/opencv-match.git
 ```
 

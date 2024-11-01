@@ -1,8 +1,5 @@
 use ndarray as nd;
-use opencv::{
-    self as cv,
-    core::{kernel_to_str, MatTraitConst},
-};
+use opencv::{self as cv, core::MatTraitConst};
 
 use crate::convert;
 
@@ -11,9 +8,9 @@ pub struct Template {
     threshold: f32,
     matching_method: Option<i32>,
     template: cv::core::Mat,
-    original_template: cv::core::Mat,
     mask: Option<cv::core::Mat>,
-    original_mask: Option<cv::core::Mat>,
+    source_template: cv::core::Mat,
+    source_mask: Option<cv::core::Mat>,
 }
 
 #[derive(Debug)]
@@ -39,9 +36,9 @@ impl Template {
             threshold: config.threshold,
             matching_method: config.matching_method,
             template: template.clone(),
-            original_template: template,
+            source_template: template,
             mask: None,
-            original_mask: None,
+            source_mask: None,
         })
     }
 
@@ -54,9 +51,9 @@ impl Template {
             threshold: config.threshold,
             matching_method: config.matching_method,
             template: template.clone(),
-            original_template: template,
+            source_template: template,
             mask: Some(mask.clone()),
-            original_mask: Some(mask),
+            source_mask: Some(mask),
         })
     }
 
@@ -72,16 +69,8 @@ impl Template {
         &self.template
     }
 
-    pub fn original_template(&self) -> &cv::core::Mat {
-        &self.original_template
-    }
-
     pub fn mask(&self) -> Option<&cv::core::Mat> {
         self.mask.as_ref()
-    }
-
-    pub fn original_mask(&self) -> Option<&cv::core::Mat> {
-        self.original_mask.as_ref()
     }
 
     pub fn width(&self) -> i32 {
@@ -95,7 +84,7 @@ impl Template {
     pub fn resize(&mut self, width: i32, height: i32) -> anyhow::Result<()> {
         let mut res = cv::core::Mat::default();
         cv::imgproc::resize(
-            &self.original_template,
+            &self.source_template,
             &mut res,
             cv::core::Size::new(width, height),
             0.0,
@@ -116,7 +105,7 @@ impl Template {
     }
 
     pub fn resize_mask(&mut self, width: i32, height: i32) -> anyhow::Result<()> {
-        if let Some(mask) = &self.original_mask {
+        if let Some(mask) = &self.source_mask {
             let mut res = cv::core::Mat::default();
             cv::imgproc::resize(
                 &mask,
@@ -131,22 +120,22 @@ impl Template {
         Ok(())
     }
 
-    pub fn resize_scale(&mut self, scale: f64) -> anyhow::Result<()> {
+    pub fn resize_with_scale(&mut self, scale: f64) -> anyhow::Result<()> {
         let mut res = cv::core::Mat::default();
         cv::imgproc::resize(
-            &self.original_template,
+            &self.source_template,
             &mut res,
             Default::default(),
             scale,
             scale,
             cv::imgproc::INTER_NEAREST_EXACT,
         )?;
-        self.original_template = res;
+        self.source_template = res;
         Ok(())
     }
 
-    pub fn resize_scale_mask(&mut self, scale: f64) -> anyhow::Result<()> {
-        if let Some(mask) = &self.original_mask {
+    pub fn resize_mask_with_scale(&mut self, scale: f64) -> anyhow::Result<()> {
+        if let Some(mask) = &self.source_mask {
             let mut res = cv::core::Mat::default();
             cv::imgproc::resize(
                 &mask,
@@ -156,45 +145,46 @@ impl Template {
                 scale,
                 cv::imgproc::INTER_NEAREST_EXACT,
             )?;
-            self.original_mask = Some(res);
+            self.source_mask = Some(res);
         }
         Ok(())
     }
 
-    pub fn find_matches(&self, input: &cv::core::Mat) -> anyhow::Result<Vec<(usize, usize)>> {
-        let res = self.find_matches_with_score(input)?;
-        Ok(res.iter().map(|x| x.location).collect())
+    pub fn find_best_matches(&self, input: &cv::core::Mat) -> anyhow::Result<Vec<MatchResult>> {
+        // TODO: Accept config instead?
+        self.find_best_matches_with(input, 0.1, 0.1)
     }
 
-    pub fn find_best_matches(&self, input: &cv::core::Mat) -> anyhow::Result<Vec<MatchResult>> {
-        let res = self.find_matches_with_score(input)?;
+    pub fn find_best_matches_with(
+        &self,
+        input: &cv::core::Mat,
+        iou_threshold: f64,
+        score_threshold: f64,
+    ) -> anyhow::Result<Vec<MatchResult>> {
+        let res = self.find_all_matches(input)?;
         let (boxes, scores) = res.iter().fold(
             (nd::Array2::<f64>::default((res.len(), 4)), Vec::new()),
-            |(mut boxes, mut scores), x| {
-                // FIXME:
-                let _ = boxes.push(
-                    nd::Axis(0),
-                    nd::ArrayView::from(&[
-                        x.location.0 as f64,
-                        x.dimension.0 as f64,
-                        x.location.1 as f64,
-                        x.dimension.1 as f64,
-                    ]),
-                );
-                scores.push(x.score as f64);
+            |(mut boxes, mut scores), result| {
+                boxes
+                    .push(
+                        nd::Axis(0),
+                        nd::ArrayView::from(&[
+                            result.position.0 as f64,
+                            result.dimension.0 as f64,
+                            result.position.1 as f64,
+                            result.dimension.1 as f64,
+                        ]),
+                    )
+                    .unwrap();
+                scores.push(result.score as f64);
                 (boxes, scores)
             },
         );
-        // FIXME:
-        let keep = powerboxesrs::nms::rtree_nms(&boxes, &scores, 0.1, 0.1);
-
+        let keep = powerboxesrs::nms::rtree_nms(&boxes, &scores, iou_threshold, score_threshold);
         Ok(keep.iter().map(|&i| res[i].clone()).collect())
     }
 
-    pub fn find_matches_with_score(
-        &self,
-        input: &cv::core::Mat,
-    ) -> anyhow::Result<Vec<MatchResult>> {
+    pub fn find_all_matches(&self, input: &cv::core::Mat) -> anyhow::Result<Vec<MatchResult>> {
         let dimension = (self.width() as usize, self.height() as usize);
         let res = self.run_match(input)?;
         let buf = convert::mat_to_array2(&res)?;
@@ -203,7 +193,7 @@ impl Template {
             |mut indices, (i, j), &val| {
                 if val > self.threshold {
                     indices.push(MatchResult {
-                        location: (i, j),
+                        position: (i, j),
                         dimension,
                         score: val,
                     });
@@ -218,7 +208,7 @@ impl Template {
         Ok(indices)
     }
 
-    fn run_match(&self, input: &cv::core::Mat) -> anyhow::Result<cv::core::Mat> {
+    pub fn run_match(&self, input: &cv::core::Mat) -> anyhow::Result<cv::core::Mat> {
         let mut res = cv::core::Mat::default();
         if let Some(mask) = &self.mask {
             cv::imgproc::match_template(
@@ -245,7 +235,7 @@ impl Template {
 
 #[derive(Debug, Clone)]
 pub struct MatchResult {
-    pub location: (usize, usize),
+    pub position: (usize, usize),
     pub dimension: (usize, usize),
     pub score: f32,
 }

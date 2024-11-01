@@ -12,7 +12,7 @@ fn main() -> Result<()> {
     )?;
 
     let start = std::time::Instant::now();
-    let res = template.find_matches(&opencv_match::convert::mat_to_grayscale(
+    let res = template.run_match(&opencv_match::convert::mat_to_grayscale(
         &img_src.try_into_cv()?,
         true,
     )?)?;

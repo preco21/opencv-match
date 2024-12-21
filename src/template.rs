@@ -30,6 +30,25 @@ impl Default for TemplateConfig {
     }
 }
 
+#[derive(Debug)]
+pub struct FindBestMatchesConfig {
+    /// The threshold for the Intersection over Union (IoU) to use for non-maximum suppression.
+    /// If not provided, `0.1` will be used.
+    pub iou_threshold: f64,
+    /// The threshold for the score to use for non-maximum suppression.
+    /// If not provided, `0.1` will be used.
+    pub score_threshold: f64,
+}
+
+impl Default for FindBestMatchesConfig {
+    fn default() -> Self {
+        Self {
+            iou_threshold: 0.1,
+            score_threshold: 0.1,
+        }
+    }
+}
+
 impl Template {
     pub fn new(template: cv::core::Mat, config: TemplateConfig) -> anyhow::Result<Self> {
         Ok(Self {
@@ -150,16 +169,10 @@ impl Template {
         Ok(())
     }
 
-    pub fn find_best_matches(&self, input: &cv::core::Mat) -> anyhow::Result<Vec<MatchResult>> {
-        // TODO: Accept config instead?
-        self.find_best_matches_with(input, 0.1, 0.1)
-    }
-
-    pub fn find_best_matches_with(
+    pub fn find_best_matches(
         &self,
         input: &cv::core::Mat,
-        iou_threshold: f64,
-        score_threshold: f64,
+        config: FindBestMatchesConfig,
     ) -> anyhow::Result<Vec<MatchResult>> {
         let res = self.find_all_matches(input)?;
         let (boxes, scores) = res.iter().fold(
@@ -180,7 +193,12 @@ impl Template {
                 (boxes, scores)
             },
         );
-        let keep = powerboxesrs::nms::rtree_nms(&boxes, &scores, iou_threshold, score_threshold);
+        let keep = powerboxesrs::nms::rtree_nms(
+            &boxes,
+            &scores,
+            config.iou_threshold,
+            config.score_threshold,
+        );
         Ok(keep.iter().map(|&i| res[i].clone()).collect())
     }
 

@@ -10,11 +10,11 @@ You can find the instructions [here](https://github.com/twistedfall/opencv-rust/
 
 Currently supports `v0.92.2` of the `opencv` crate.
 
-[TODO: Make version selection more flexible]
+[TODO: To make version selection more flexible]
 
 ## Install
 
-Currently not available on `crates.io`. You can add this library to your `Cargo.toml` with the following command:
+The crate is not currently available on `crates.io`. You can add this library to your `Cargo.toml` with the following command:
 
 ```shell
 cargo add --git https://github.com/preco21/opencv-match.git

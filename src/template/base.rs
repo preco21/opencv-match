@@ -43,8 +43,8 @@ pub struct FindBestMatchesConfig {
 impl Default for FindBestMatchesConfig {
     fn default() -> Self {
         Self {
-            iou_threshold: 0.1,
-            score_threshold: 0.1,
+            iou_threshold: 0.8,
+            score_threshold: 0.0,
         }
     }
 }
@@ -242,11 +242,11 @@ impl MatchResult {
         score_threshold: f64,
     ) -> Vec<usize> {
         let (boxes, scores) = Self::calc_nms_scores(results);
-        powerboxesrs::nms::nms(&boxes, &scores, iou_threshold, score_threshold)
+        powerboxesrs::nms::rtree_nms(&boxes, &scores, iou_threshold, score_threshold)
     }
 
-    pub fn calc_nms_scores(results: &[MatchResult]) -> (nd::Array2<i32>, Vec<f64>) {
-        results.iter().filter(|r| !r.dimension.empty()).fold(
+    pub fn calc_nms_scores(results: &[MatchResult]) -> (nd::Array2<i32>, nd::Array1<f64>) {
+        let (boxes, scores) = results.iter().filter(|r| !r.dimension.empty()).fold(
             (nd::Array2::<i32>::default((0, 4)), Vec::new()),
             |(mut boxes, mut scores), result| {
                 boxes
@@ -254,15 +254,16 @@ impl MatchResult {
                         nd::Axis(0),
                         nd::ArrayView::from(&[
                             result.position.x,
-                            result.dimension.width,
                             result.position.y,
-                            result.dimension.height,
+                            result.position.x + result.dimension.width,
+                            result.position.y + result.dimension.height,
                         ]),
                     )
                     .unwrap();
                 scores.push(result.score as f64);
                 (boxes, scores)
             },
-        )
+        );
+        (boxes, nd::Array1::from(scores))
     }
 }

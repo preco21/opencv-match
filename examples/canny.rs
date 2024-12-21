@@ -11,14 +11,7 @@ fn main() -> Result<()> {
     let template_mat: cv::core::Mat = template.clone().try_into_cv()?;
 
     let mut template_edges_mat = cv::core::Mat::default();
-    cv::imgproc::canny(
-        &template_mat,
-        &mut template_edges_mat,
-        100.0,
-        200.0,
-        3,
-        true,
-    )?;
+    cv::imgproc::canny(&template_mat, &mut template_edges_mat, 0.0, 100.0, 3, true)?;
 
     let target = image::open("./examples/sample.png")?.to_rgba8();
     let target_mat: cv::core::Mat = target.clone().try_into_cv()?;
@@ -38,8 +31,8 @@ fn main() -> Result<()> {
     cv::imgproc::canny(
         &target_input_blur_mat,
         &mut target_edges_mat,
-        150.0,
-        300.0,
+        100.0,
+        200.0,
         3,
         true,
     )?;
@@ -50,28 +43,23 @@ fn main() -> Result<()> {
     let matches = Template::new(
         template_mat,
         TemplateConfig {
-            threshold: 0.5,
+            threshold: 0.68,
             ..Default::default()
         },
     )?
-    .find_best_matches(
-        &target_mat,
-        FindBestMatchesConfig {
-            iou_threshold: 0.0,
-            score_threshold: 0.0,
-        },
-    )?;
+    .find_best_matches(&target_mat, Default::default())?;
 
     println!(
         "{:?}",
         matches
             .iter()
             .map(|m| format!(
-                "{:?} {:?} {:?} {:?}",
+                "{:?} {:?} {:?} {:?} ({:?})",
                 m.position.x,
                 m.position.y,
                 m.position.x + m.dimension.width,
-                m.position.y + m.dimension.height
+                m.position.y + m.dimension.height,
+                m.score
             ))
             .collect::<Vec<_>>()
     );

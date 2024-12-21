@@ -33,17 +33,15 @@ impl Default for TemplateConfig {
 #[derive(Debug)]
 pub struct FindBestMatchesConfig {
     /// The threshold for the Intersection over Union (IoU) to use for non-maximum suppression.
-    /// If not provided, `0.1` will be used.
     pub iou_threshold: f64,
     /// The threshold for the score to use for non-maximum suppression.
-    /// If not provided, `0.1` will be used.
     pub score_threshold: f64,
 }
 
 impl Default for FindBestMatchesConfig {
     fn default() -> Self {
         Self {
-            iou_threshold: 0.8,
+            iou_threshold: 0.0,
             score_threshold: 0.0,
         }
     }

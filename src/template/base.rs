@@ -174,35 +174,13 @@ impl Template {
         input: &cv::core::Mat,
         config: FindBestMatchesConfig,
     ) -> anyhow::Result<Vec<MatchResult>> {
-        let res = self.find_all_matches(input)?;
-        let (boxes, scores) = res.iter().fold(
-            (nd::Array2::<f64>::default((res.len(), 4)), Vec::new()),
-            |(mut boxes, mut scores), result| {
-                boxes
-                    .push(
-                        nd::Axis(0),
-                        nd::ArrayView::from(&[
-                            result.position.0 as f64,
-                            result.dimension.0 as f64,
-                            result.position.1 as f64,
-                            result.dimension.1 as f64,
-                        ]),
-                    )
-                    .unwrap();
-                scores.push(result.score as f64);
-                (boxes, scores)
-            },
-        );
-        let keep = powerboxesrs::nms::rtree_nms(
-            &boxes,
-            &scores,
-            config.iou_threshold,
-            config.score_threshold,
-        );
+        let res = self.find_matching_points(input)?;
+        let keep =
+            MatchResult::calc_nms_indices(&res, config.iou_threshold, config.score_threshold);
         Ok(keep.iter().map(|&i| res[i].clone()).collect())
     }
 
-    pub fn find_all_matches(&self, input: &cv::core::Mat) -> anyhow::Result<Vec<MatchResult>> {
+    pub fn find_matching_points(&self, input: &cv::core::Mat) -> anyhow::Result<Vec<MatchResult>> {
         let dimension = (self.width() as usize, self.height() as usize);
         let res = self.run_match(input)?;
         let buf = convert::mat_to_array2(&res)?;
@@ -256,4 +234,36 @@ pub struct MatchResult {
     pub position: (usize, usize),
     pub dimension: (usize, usize),
     pub score: f32,
+}
+
+impl MatchResult {
+    pub fn calc_nms_indices(
+        results: &[MatchResult],
+        iou_threshold: f64,
+        score_threshold: f64,
+    ) -> Vec<usize> {
+        let (boxes, scores) = MatchResult::calc_nms_scores(results);
+        powerboxesrs::nms::nms(&boxes, &scores, iou_threshold, score_threshold)
+    }
+
+    pub fn calc_nms_scores(results: &[MatchResult]) -> (nd::Array2<f64>, Vec<f64>) {
+        results.iter().fold(
+            (nd::Array2::<f64>::default((results.len(), 4)), Vec::new()),
+            |(mut boxes, mut scores), result| {
+                boxes
+                    .push(
+                        nd::Axis(0),
+                        nd::ArrayView::from(&[
+                            result.position.0 as f64,
+                            result.dimension.0 as f64,
+                            result.position.1 as f64,
+                            result.dimension.1 as f64,
+                        ]),
+                    )
+                    .unwrap();
+                scores.push(result.score as f64);
+                (boxes, scores)
+            },
+        )
+    }
 }

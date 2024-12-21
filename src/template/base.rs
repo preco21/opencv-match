@@ -181,7 +181,6 @@ impl Template {
     }
 
     pub fn find_matching_points(&self, input: &cv::core::Mat) -> anyhow::Result<Vec<MatchResult>> {
-        let dimension = (self.width() as usize, self.height() as usize);
         let res = self.run_match(input)?;
         let buf = convert::mat_to_array2(&res)?;
         let indices: Vec<MatchResult> = nd::Zip::indexed(&buf).par_fold(
@@ -189,8 +188,8 @@ impl Template {
             |mut indices, (i, j), &val| {
                 if val > self.threshold {
                     indices.push(MatchResult {
-                        position: (i, j),
-                        dimension,
+                        position: cv::core::Point::new(i as i32, j as i32),
+                        dimension: cv::core::Size::new(self.width(), self.height()),
                         score: val,
                     });
                 }
@@ -231,8 +230,8 @@ impl Template {
 
 #[derive(Debug, Clone)]
 pub struct MatchResult {
-    pub position: (usize, usize),
-    pub dimension: (usize, usize),
+    pub position: cv::core::Point,
+    pub dimension: cv::core::Size,
     pub score: f32,
 }
 
@@ -242,22 +241,22 @@ impl MatchResult {
         iou_threshold: f64,
         score_threshold: f64,
     ) -> Vec<usize> {
-        let (boxes, scores) = MatchResult::calc_nms_scores(results);
+        let (boxes, scores) = Self::calc_nms_scores(results);
         powerboxesrs::nms::nms(&boxes, &scores, iou_threshold, score_threshold)
     }
 
-    pub fn calc_nms_scores(results: &[MatchResult]) -> (nd::Array2<f64>, Vec<f64>) {
-        results.iter().fold(
-            (nd::Array2::<f64>::default((results.len(), 4)), Vec::new()),
+    pub fn calc_nms_scores(results: &[MatchResult]) -> (nd::Array2<i32>, Vec<f64>) {
+        results.iter().filter(|r| !r.dimension.empty()).fold(
+            (nd::Array2::<i32>::default((0, 4)), Vec::new()),
             |(mut boxes, mut scores), result| {
                 boxes
                     .push(
                         nd::Axis(0),
                         nd::ArrayView::from(&[
-                            result.position.0 as f64,
-                            result.dimension.0 as f64,
-                            result.position.1 as f64,
-                            result.dimension.1 as f64,
+                            result.position.x,
+                            result.dimension.width,
+                            result.position.y,
+                            result.dimension.height,
                         ]),
                     )
                     .unwrap();

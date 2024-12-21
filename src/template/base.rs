@@ -240,7 +240,7 @@ impl MatchResult {
         score_threshold: f64,
     ) -> Vec<usize> {
         let (boxes, scores) = Self::calc_nms_scores(results);
-        powerboxesrs::nms::rtree_nms(&boxes, &scores, iou_threshold, score_threshold)
+        powerboxesrs::nms::nms(&boxes, &scores, iou_threshold, score_threshold)
     }
 
     pub fn calc_nms_scores(results: &[MatchResult]) -> (nd::Array2<i32>, nd::Array1<f64>) {

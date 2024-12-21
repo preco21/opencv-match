@@ -3,7 +3,7 @@ use image::{GrayImage, RgbaImage};
 use opencv::{self as cv};
 use opencv_match::{
     prelude::{TryFromCv, TryIntoCv},
-    FindBestMatchesConfig, Template, TemplateConfig,
+    Template, TemplateConfig,
 };
 
 fn main() -> Result<()> {

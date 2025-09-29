@@ -23,16 +23,28 @@ fn main() -> Result<()> {
     println!("template: {:?}", template_mat);
 
     let mut dst_img: cv::core::Mat = target.try_into_cv()?;
-    for m in matches {
-        cv::imgproc::rectangle(
-            &mut dst_img,
-            cv::core::Rect::from_point_size(m.position, m.dimension),
-            cv::core::VecN([255., 255., 0., 0.]),
-            2,
-            cv::imgproc::LINE_8,
-            0,
-        )?;
-    }
+
+    let matches = find_matching_boxes(
+        &target_mat,
+        &template_mat,
+        DetectorMethod::Sift,
+        Params {
+            max_matching_objects: 10,
+            sift_distance_threshold: 0.5,
+            best_matches_points: 20,
+        },
+    )?;
+
+    // for m in matches {
+    //     cv::imgproc::rectangle(
+    //         &mut dst_img,
+    //         cv::core::Rect::from_point_size(m.position, m.dimension),
+    //         cv::core::VecN([255., 255., 0., 0.]),
+    //         2,
+    //         cv::imgproc::LINE_8,
+    //         0,
+    //     )?;
+    // }
 
     RgbaImage::try_from_cv(&dst_img)?.save("./result.png")?;
 
@@ -70,7 +82,7 @@ pub fn find_matching_boxes(
     params: Params,
 ) -> Result<Vec<cv::core::Mat>> {
     // Prepare detector + matcher
-    let (sift, orb, matcher) = match detector_method {
+    let (mut sift, mut orb, mut matcher) = match detector_method {
         DetectorMethod::Sift => {
             // SIFT defaults; tweak if you need
             let sift = cv::features2d::SIFT::create(0, 3, 0.04, 10.0, 1.6, false)?;
@@ -101,7 +113,7 @@ pub fn find_matching_boxes(
     let mut template_desc = cv::core::Mat::default(); // query
     match detector_method {
         DetectorMethod::Sift => {
-            sift.as_ref().unwrap().detect_and_compute(
+            sift.as_mut().unwrap().detect_and_compute(
                 template,
                 &opencv::core::no_array(),
                 &mut template_kps,
@@ -110,7 +122,7 @@ pub fn find_matching_boxes(
             )?;
         }
         DetectorMethod::Orb => {
-            orb.as_ref().unwrap().detect_and_compute(
+            orb.as_mut().unwrap().detect_and_compute(
                 template,
                 &opencv::core::no_array(),
                 &mut template_kps,
@@ -129,7 +141,7 @@ pub fn find_matching_boxes(
         let mut target_desc = opencv::core::Mat::default();
         match detector_method {
             DetectorMethod::Sift => {
-                sift.as_ref().unwrap().detect_and_compute(
+                sift.as_mut().unwrap().detect_and_compute(
                     &matching_img,
                     &opencv::core::no_array(),
                     &mut target_kps,
@@ -138,7 +150,7 @@ pub fn find_matching_boxes(
                 )?;
             }
             DetectorMethod::Orb => {
-                orb.as_ref().unwrap().detect_and_compute(
+                orb.as_mut().unwrap().detect_and_compute(
                     &matching_img,
                     &opencv::core::no_array(),
                     &mut target_kps,

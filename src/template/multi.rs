@@ -55,8 +55,9 @@ impl MultiMatcher {
         let every_matches = self
             .descriptors
             .par_iter()
-            .flat_map(|d| d.matcher.find_matching_points(input, &d.label))
+            .map(|d| d.matcher.find_matching_points(input, &d.label))
             .collect::<Result<Vec<_>, _>>()?;
+        let every_matches = every_matches.into_iter().flatten().collect::<Vec<_>>();
         let keep = MatchResult::calc_nms_indices(
             &every_matches
                 .iter()

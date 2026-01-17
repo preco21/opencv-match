@@ -98,6 +98,33 @@ impl Template {
         self.template.rows()
     }
 
+    pub fn source_width(&self) -> i32 {
+        self.source_template.cols()
+    }
+
+    pub fn source_height(&self) -> i32 {
+        self.source_template.rows()
+    }
+
+    pub fn resized(&self, width: i32, height: i32) -> anyhow::Result<Self> {
+        if width < 1 || height < 1 {
+            anyhow::bail!("scaled template size is too small");
+        }
+        let mut template = self.clone();
+        template.resize(width, height)?;
+        template.resize_mask(width, height)?;
+        Ok(template)
+    }
+
+    pub fn resized_with_scale(&self, scale: f64) -> anyhow::Result<Self> {
+        if scale <= 0.0 {
+            anyhow::bail!("scale must be positive");
+        }
+        let width = (self.source_width() as f64 * scale).round() as i32;
+        let height = (self.source_height() as f64 * scale).round() as i32;
+        self.resized(width, height)
+    }
+
     pub fn resize(&mut self, width: i32, height: i32) -> anyhow::Result<()> {
         let mut res = cv::core::Mat::default();
         cv::imgproc::resize(

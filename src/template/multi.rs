@@ -24,6 +24,44 @@ impl MultiMatcherDescriptor {
             matcher: TemplateMatcher::Pyramid(pyramid),
         }
     }
+
+    pub fn builder() -> MultiMatcherDescriptorBuilder {
+        MultiMatcherDescriptorBuilder::new()
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct MultiMatcherDescriptorBuilder {
+    descriptors: Vec<MultiMatcherDescriptor>,
+}
+
+impl MultiMatcherDescriptorBuilder {
+    pub fn new() -> Self {
+        Self {
+            descriptors: Vec::new(),
+        }
+    }
+
+    pub fn add_template(mut self, label: impl Into<String>, template: Template) -> Self {
+        self.descriptors
+            .push(MultiMatcherDescriptor::new(label.into(), template));
+        self
+    }
+
+    pub fn add_pyramid(mut self, label: impl Into<String>, pyramid: TemplatePyramid) -> Self {
+        self.descriptors
+            .push(MultiMatcherDescriptor::with_pyramid(label.into(), pyramid));
+        self
+    }
+
+    pub fn add_descriptor(mut self, descriptor: MultiMatcherDescriptor) -> Self {
+        self.descriptors.push(descriptor);
+        self
+    }
+
+    pub fn build(self) -> MultiMatcher {
+        MultiMatcher::new(self.descriptors)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -35,8 +73,8 @@ pub struct MultiMatcher {
 ///
 /// This also helps to find the best matches across all templates simultaneously.
 impl MultiMatcher {
-    pub fn new(descriptors: Vec<MultiMatcherDescriptor>) -> Result<Self> {
-        Ok(Self { descriptors })
+    pub fn new(descriptors: Vec<MultiMatcherDescriptor>) -> Self {
+        Self { descriptors }
     }
 
     pub fn descriptors(&self) -> &[MultiMatcherDescriptor] {

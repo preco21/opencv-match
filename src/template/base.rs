@@ -1,7 +1,7 @@
 use ndarray as nd;
 use opencv::{self as cv, core::MatTraitConst};
 
-use crate::convert;
+use crate::{convert, template::nms::nms};
 
 #[derive(Debug, Clone)]
 pub struct Template {
@@ -267,7 +267,7 @@ impl MatchResult {
         score_threshold: f64,
     ) -> Vec<usize> {
         let (boxes, scores) = Self::calc_nms_scores(results);
-        powerboxesrs::nms::nms(&boxes, &scores, iou_threshold, score_threshold)
+        nms(&boxes, &scores, iou_threshold, score_threshold)
     }
 
     pub fn calc_nms_scores(results: &[MatchResult]) -> (nd::Array2<i32>, nd::Array1<f64>) {

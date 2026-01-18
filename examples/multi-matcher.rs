@@ -26,7 +26,7 @@ fn main() -> Result<()> {
         MultiMatcherDescriptor::new("single".to_string(), template),
         MultiMatcherDescriptor::with_pyramid("pyramid".to_string(), pyramid),
     ];
-    let matcher = MultiMatcher::new(descriptors)?;
+    let matcher = MultiMatcher::new(descriptors);
 
     let matches = matcher.find_best_matches(
         &target_mat,

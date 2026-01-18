@@ -25,17 +25,17 @@ impl MultiMatcherDescriptor {
         }
     }
 
-    pub fn builder() -> MultiMatcherDescriptorBuilder {
-        MultiMatcherDescriptorBuilder::new()
+    pub fn builder() -> MultiMatcherBuilder {
+        MultiMatcherBuilder::new()
     }
 }
 
 #[derive(Debug, Clone)]
-pub struct MultiMatcherDescriptorBuilder {
+pub struct MultiMatcherBuilder {
     descriptors: Vec<MultiMatcherDescriptor>,
 }
 
-impl MultiMatcherDescriptorBuilder {
+impl MultiMatcherBuilder {
     pub fn new() -> Self {
         Self {
             descriptors: Vec::new(),

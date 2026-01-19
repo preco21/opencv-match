@@ -7,3 +7,5 @@ pub mod scale;
 pub mod convert;
 
 pub mod prelude;
+
+pub mod template_v2;

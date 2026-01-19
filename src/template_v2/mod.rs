@@ -2,6 +2,7 @@ use anyhow::{bail, ensure, Result};
 use opencv::core::{self as cv, MatTraitConst};
 use opencv::imgproc;
 use opencv::prelude::*;
+use rayon::prelude::*;
 use std::cmp::Ordering;
 use std::f64::consts::PI;
 
@@ -241,24 +242,30 @@ pub fn match_model_multi_scale(
     ensure!(!template.empty(), "template image is empty");
     ensure!(template.channels() == 1, "template image must be grayscale");
 
-    let mut results = Vec::new();
-    for &scale in scales {
-        ensure!(scale > 0.0, "scale must be positive");
+    let mut results = scales
+        .par_iter()
+        .try_fold(Vec::new, |mut acc, &scale| -> Result<Vec<ScaledPose>> {
+            ensure!(scale > 0.0, "scale must be positive");
 
-        let scaled_template = if (scale - 1.0).abs() < TOLERANCE {
-            template.clone()
-        } else {
-            resize_template(template, scale)?
-        };
+            let scaled_template = if (scale - 1.0).abs() < TOLERANCE {
+                template.clone()
+            } else {
+                resize_template(template, scale)?
+            };
 
-        if scaled_template.cols() > dst.cols() || scaled_template.rows() > dst.rows() {
-            continue;
-        }
+            if scaled_template.cols() > dst.cols() || scaled_template.rows() > dst.rows() {
+                return Ok(acc);
+            }
 
-        let model = GrayMatchModel::train(&scaled_template, -1)?;
-        let poses = model.match_model(dst, match_config.clone())?;
-        results.extend(poses.into_iter().map(|pose| ScaledPose { pose, scale }));
-    }
+            let model = GrayMatchModel::train(&scaled_template, -1)?;
+            let poses = model.match_model(dst, match_config.clone())?;
+            acc.extend(poses.into_iter().map(|pose| ScaledPose { pose, scale }));
+            Ok(acc)
+        })
+        .try_reduce(Vec::new, |mut a, mut b| {
+            a.append(&mut b);
+            Ok(a)
+        })?;
 
     results.sort_by(|a, b| {
         b.pose
@@ -589,109 +596,128 @@ fn match_top_level(
         size_area(dst_top.size()?) / size_area(template_size) > 500 && max_count > 10;
 
     let count = (span_angle / angle_step).floor() as i32 + 1;
-    let mut candidates = Vec::new();
-    for i in 0..count {
-        let angle = start_angle + angle_step * i as f64;
-        let mut rotate =
-            get_rotation_matrix_2d(cv::Point2f::new(center.x as f32, center.y as f32), angle)?;
-        let size = compute_rotation_size(dst_top.size()?, template_size, angle, &rotate)?;
-
-        let tx = (size.width as f64 - 1.0) / 2.0 - center.x;
-        let ty = (size.height as f64 - 1.0) / 2.0 - center.y;
-        *rotate.at_2d_mut::<f64>(0, 2)? += tx;
-        *rotate.at_2d_mut::<f64>(1, 2)? += ty;
-        let offset = cv::Point2d::new(tx, ty);
-
-        let mut rotated = cv::Mat::default();
-        imgproc::warp_affine(
-            dst_top,
-            &mut rotated,
-            &rotate,
-            size,
-            imgproc::INTER_LINEAR,
-            cv::BORDER_CONSTANT,
-            cv::Scalar::all(model.border_color as f64),
-        )?;
-
-        let result = match_template(&rotated, model, level)?;
-
-        if cal_max_by_block {
-            let mut block = BlockMax::new(result, template_size)?;
-            let (mut max_score, mut max_pos) = match block.max_value_loc() {
-                Some((score, pos)) => (score, pos),
-                None => continue,
-            };
-            if max_score < top_score_threshold {
-                continue;
-            }
-
-            candidates.push(Candidate::new(
-                cv::Point2d::new(max_pos.x as f64 - offset.x, max_pos.y as f64 - offset.y),
-                angle,
-                max_score,
-            ));
-            let limit = max_count.saturating_add(CANDIDATE).saturating_sub(1);
-            for _ in 0..limit {
-                next_max_loc_block(
-                    max_pos,
-                    template_size,
-                    max_overlap,
-                    &mut block,
-                    &mut max_score,
-                    &mut max_pos,
-                )?;
-                if max_score < top_score_threshold {
-                    break;
-                }
-
-                candidates.push(Candidate::new(
-                    cv::Point2d::new(max_pos.x as f64 - offset.x, max_pos.y as f64 - offset.y),
-                    angle,
-                    max_score,
-                ));
-            }
-        } else {
-            let mut max_score = 0.0;
-            let mut max_pos = cv::Point::new(0, 0);
-            cv::min_max_loc(
-                &result,
-                None,
-                Some(&mut max_score),
-                None,
-                Some(&mut max_pos),
-                &cv::no_array(),
-            )?;
-            if max_score < top_score_threshold {
-                continue;
-            }
-
-            candidates.push(Candidate::new(
-                cv::Point2d::new(max_pos.x as f64 - offset.x, max_pos.y as f64 - offset.y),
-                angle,
-                max_score,
-            ));
-            let limit = max_count.saturating_add(CANDIDATE).saturating_sub(1);
-            for _ in 0..limit {
-                next_max_loc_mat(
-                    &result,
-                    max_pos,
-                    template_size,
-                    max_overlap,
-                    &mut max_score,
-                    &mut max_pos,
-                )?;
-                if max_score < top_score_threshold {
-                    break;
-                }
-
-                candidates.push(Candidate::new(
-                    cv::Point2d::new(max_pos.x as f64 - offset.x, max_pos.y as f64 - offset.y),
-                    angle,
-                    max_score,
-                ));
-            }
-        }
+    if count <= 0 {
+        return Ok(Vec::new());
     }
+
+    let mut candidates = (0..count)
+        .into_par_iter()
+        .try_fold(Vec::new, |mut acc, i| -> Result<Vec<Candidate>> {
+            let angle = start_angle + angle_step * i as f64;
+            let mut rotate = get_rotation_matrix_2d(
+                cv::Point2f::new(center.x as f32, center.y as f32),
+                angle,
+            )?;
+            let size = compute_rotation_size(dst_top.size()?, template_size, angle, &rotate)?;
+
+            let tx = (size.width as f64 - 1.0) / 2.0 - center.x;
+            let ty = (size.height as f64 - 1.0) / 2.0 - center.y;
+            *rotate.at_2d_mut::<f64>(0, 2)? += tx;
+            *rotate.at_2d_mut::<f64>(1, 2)? += ty;
+            let offset = cv::Point2d::new(tx, ty);
+
+            let mut rotated = cv::Mat::default();
+            imgproc::warp_affine(
+                dst_top,
+                &mut rotated,
+                &rotate,
+                size,
+                imgproc::INTER_LINEAR,
+                cv::BORDER_CONSTANT,
+                cv::Scalar::all(model.border_color as f64),
+            )?;
+
+            let result = match_template(&rotated, model, level)?;
+
+            if cal_max_by_block {
+                let mut block = BlockMax::new(result, template_size)?;
+                let (mut max_score, mut max_pos) = match block.max_value_loc() {
+                    Some((score, pos)) => (score, pos),
+                    None => return Ok(acc),
+                };
+                if max_score < top_score_threshold {
+                    return Ok(acc);
+                }
+
+                acc.push(Candidate::new(
+                    cv::Point2d::new(max_pos.x as f64 - offset.x, max_pos.y as f64 - offset.y),
+                    angle,
+                    max_score,
+                ));
+                let limit = max_count.saturating_add(CANDIDATE).saturating_sub(1);
+                for _ in 0..limit {
+                    next_max_loc_block(
+                        max_pos,
+                        template_size,
+                        max_overlap,
+                        &mut block,
+                        &mut max_score,
+                        &mut max_pos,
+                    )?;
+                    if max_score < top_score_threshold {
+                        break;
+                    }
+
+                    acc.push(Candidate::new(
+                        cv::Point2d::new(
+                            max_pos.x as f64 - offset.x,
+                            max_pos.y as f64 - offset.y,
+                        ),
+                        angle,
+                        max_score,
+                    ));
+                }
+            } else {
+                let mut max_score = 0.0;
+                let mut max_pos = cv::Point::new(0, 0);
+                cv::min_max_loc(
+                    &result,
+                    None,
+                    Some(&mut max_score),
+                    None,
+                    Some(&mut max_pos),
+                    &cv::no_array(),
+                )?;
+                if max_score < top_score_threshold {
+                    return Ok(acc);
+                }
+
+                acc.push(Candidate::new(
+                    cv::Point2d::new(max_pos.x as f64 - offset.x, max_pos.y as f64 - offset.y),
+                    angle,
+                    max_score,
+                ));
+                let limit = max_count.saturating_add(CANDIDATE).saturating_sub(1);
+                for _ in 0..limit {
+                    next_max_loc_mat(
+                        &result,
+                        max_pos,
+                        template_size,
+                        max_overlap,
+                        &mut max_score,
+                        &mut max_pos,
+                    )?;
+                    if max_score < top_score_threshold {
+                        break;
+                    }
+
+                    acc.push(Candidate::new(
+                        cv::Point2d::new(
+                            max_pos.x as f64 - offset.x,
+                            max_pos.y as f64 - offset.y,
+                        ),
+                        angle,
+                        max_score,
+                    ));
+                }
+            }
+
+            Ok(acc)
+        })
+        .try_reduce(Vec::new, |mut a, mut b| {
+            a.append(&mut b);
+            Ok(a)
+        })?;
 
     candidates.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(Ordering::Equal));
     Ok(candidates)
@@ -705,103 +731,108 @@ fn match_down_level(
     model: &GrayMatchModel,
     level: usize,
 ) -> Result<Vec<Candidate>> {
-    let mut level_matched = Vec::new();
+    let mut level_matched = candidates
+        .par_iter()
+        .try_fold(Vec::new, |mut acc, pose| -> Result<Vec<Candidate>> {
+            let mut pose = pose.clone();
+            let mut matched = true;
 
-    for pose in candidates {
-        let mut pose = pose.clone();
-        let mut matched = true;
+            for current_level in (0..level).rev() {
+                let current_template = &model.pyramids[current_level];
+                let tmp_size = current_template.size()?;
+                let current_dst = &pyramids[current_level];
+                let dst_size = current_dst.size()?;
 
-        for current_level in (0..level).rev() {
-            let current_template = &model.pyramids[current_level];
-            let tmp_size = current_template.size()?;
-            let current_dst = &pyramids[current_level];
-            let dst_size = current_dst.size()?;
+                let current_angle_step = size_angle_step(tmp_size);
+                let center = size_center(dst_size);
 
-            let current_angle_step = size_angle_step(tmp_size);
-            let center = size_center(dst_size);
+                let last_size = pyramids[current_level + 1].size()?;
+                let last_center = size_center(last_size);
+                let mut top_left = transform_with_center(pose.pos, last_center, -pose.angle)?;
+                top_left.x *= 2.0;
+                top_left.y *= 2.0;
 
-            let last_size = pyramids[current_level + 1].size()?;
-            let last_center = size_center(last_size);
-            let mut top_left = transform_with_center(pose.pos, last_center, -pose.angle)?;
-            top_left.x *= 2.0;
-            top_left.y *= 2.0;
+                let score_threshold = min_score * 0.9_f64.powi(current_level as i32);
 
-            let score_threshold = min_score * 0.9_f64.powi(current_level as i32);
+                let mut new_candidate = Candidate::new(cv::Point2d::new(0.0, 0.0), 0.0, 0.0);
+                let mut subpixel_offset = None;
 
-            let mut new_candidate = Candidate::new(cv::Point2d::new(0.0, 0.0), 0.0, 0.0);
-            let mut subpixel_offset = None;
+                for i in -1..=1 {
+                    let angle = pose.angle + current_angle_step * i as f64;
+                    let mut rotate = get_rotation_matrix_2d(
+                        cv::Point2f::new(center.x as f32, center.y as f32),
+                        angle,
+                    )?;
+                    let roi = crop_rotated_roi(current_dst, tmp_size, top_left, &mut rotate)?;
 
-            for i in -1..=1 {
-                let angle = pose.angle + current_angle_step * i as f64;
-                let mut rotate = get_rotation_matrix_2d(
-                    cv::Point2f::new(center.x as f32, center.y as f32),
-                    angle,
-                )?;
-                let roi = crop_rotated_roi(current_dst, tmp_size, top_left, &mut rotate)?;
+                    let result = match_template(&roi, model, current_level)?;
+                    let mut max_score = 0.0;
+                    let mut max_pos = cv::Point::new(0, 0);
+                    cv::min_max_loc(
+                        &result,
+                        None,
+                        Some(&mut max_score),
+                        None,
+                        Some(&mut max_pos),
+                        &cv::no_array(),
+                    )?;
 
-                let result = match_template(&roi, model, current_level)?;
-                let mut max_score = 0.0;
-                let mut max_pos = cv::Point::new(0, 0);
-                cv::min_max_loc(
-                    &result,
-                    None,
-                    Some(&mut max_score),
-                    None,
-                    Some(&mut max_pos),
-                    &cv::no_array(),
-                )?;
+                    if new_candidate.score >= max_score || max_score < score_threshold {
+                        continue;
+                    }
 
-                if new_candidate.score >= max_score || max_score < score_threshold {
-                    continue;
-                }
+                    new_candidate = Candidate::new(
+                        cv::Point2d::new(max_pos.x as f64, max_pos.y as f64),
+                        angle,
+                        max_score,
+                    );
 
-                new_candidate = Candidate::new(
-                    cv::Point2d::new(max_pos.x as f64, max_pos.y as f64),
-                    angle,
-                    max_score,
-                );
-
-                if current_level == 0 && subpixel {
-                    let is_border = max_pos.x == 0
-                        || max_pos.y == 0
-                        || max_pos.x == result.cols() - 1
-                        || max_pos.y == result.rows() - 1;
-                    if !is_border {
-                        let rect = cv::Rect::new(max_pos.x - 1, max_pos.y - 1, 3, 3);
-                        let score_rect = result.roi(rect)?.clone_pointee();
-                        subpixel_offset = Some(compute_subpixel(&score_rect)?);
+                    if current_level == 0 && subpixel {
+                        let is_border = max_pos.x == 0
+                            || max_pos.y == 0
+                            || max_pos.x == result.cols() - 1
+                            || max_pos.y == result.rows() - 1;
+                        if !is_border {
+                            let rect = cv::Rect::new(max_pos.x - 1, max_pos.y - 1, 3, 3);
+                            let score_rect = result.roi(rect)?.clone_pointee();
+                            subpixel_offset = Some(compute_subpixel(&score_rect)?);
+                        }
                     }
                 }
+
+                if new_candidate.score < score_threshold {
+                    matched = false;
+                    break;
+                }
+
+                if let Some(offset) = subpixel_offset {
+                    new_candidate.pos.x += offset.x as f64;
+                    new_candidate.pos.y += offset.y as f64;
+                }
+
+                let mut padding_top_left =
+                    transform_with_center(top_left, center, new_candidate.angle)?;
+                padding_top_left.x -= 3.0;
+                padding_top_left.y -= 3.0;
+                new_candidate.pos.x += padding_top_left.x;
+                new_candidate.pos.y += padding_top_left.y;
+                pose = new_candidate;
             }
 
-            if new_candidate.score < score_threshold {
-                matched = false;
-                break;
+            if !matched {
+                return Ok(acc);
             }
 
-            if let Some(offset) = subpixel_offset {
-                new_candidate.pos.x += offset.x as f64;
-                new_candidate.pos.y += offset.y as f64;
-            }
-
-            let mut padding_top_left =
-                transform_with_center(top_left, center, new_candidate.angle)?;
-            padding_top_left.x -= 3.0;
-            padding_top_left.y -= 3.0;
-            new_candidate.pos.x += padding_top_left.x;
-            new_candidate.pos.y += padding_top_left.y;
-            pose = new_candidate;
-        }
-
-        if !matched {
-            continue;
-        }
-
-        let last_size = pyramids[0].size()?;
-        let last_center = size_center(last_size);
-        pose.pos = transform_with_center(pose.pos, last_center, -pose.angle)?;
-        level_matched.push(pose);
-    }
+            let last_size = pyramids[0].size()?;
+            let last_center = size_center(last_size);
+            pose.pos = transform_with_center(pose.pos, last_center, -pose.angle)?;
+            acc.push(pose);
+            Ok(acc)
+        })
+        .try_reduce(Vec::new, |mut a, mut b| {
+            a.append(&mut b);
+            Ok(a)
+        })?;
 
     level_matched.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(Ordering::Equal));
     Ok(level_matched)

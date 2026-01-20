@@ -1,10 +1,9 @@
 use anyhow::Result;
-use opencv::core::MatTraitConst;
 use opencv::imgproc;
 use opencv_match::prelude::*;
 use opencv_match::{
     convert,
-    gray::{MatchConfig, ModelPyramid, NmsConfig},
+    fast_gray::{MatchConfig, ModelPyramid, NmsConfig},
 };
 
 fn main() -> Result<()> {

@@ -1,13 +1,10 @@
 mod template;
 pub use template::*;
 
-pub mod cv_convert;
-pub mod scale;
-
 pub mod convert;
-
+pub mod cv_convert;
+pub mod fast_gray;
 pub mod prelude;
-
-pub mod gray;
+pub mod scale;
 
 pub(crate) mod nms;

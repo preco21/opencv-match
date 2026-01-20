@@ -8,6 +8,6 @@ pub mod convert;
 
 pub mod prelude;
 
-pub mod template_v2;
+pub mod gray;
 
 pub(crate) mod nms;

@@ -4,7 +4,7 @@ use opencv::imgproc;
 use opencv_match::prelude::*;
 use opencv_match::{
     convert,
-    template_v2::{match_model_multi_scale, MatchConfig},
+    gray::{MatchConfig, ModelPyramid, NmsConfig},
 };
 
 fn main() -> Result<()> {
@@ -13,27 +13,23 @@ fn main() -> Result<()> {
 
     let template_mat = convert::mat_to_grayscale(&img_tmp.try_into_cv()?, true)?;
     let target_mat = convert::mat_to_grayscale(&img_src.clone().try_into_cv()?, true)?;
-
-    let max_scale = (target_mat.cols() as f64 / template_mat.cols() as f64)
-        .min(target_mat.rows() as f64 / template_mat.rows() as f64);
-    let scale_step = 0.25;
-    let mut scales = Vec::new();
-    let mut scale = 1.0;
-    while scale <= max_scale && scale > 0.1 {
-        scales.push(scale);
-        scale -= scale_step;
-    }
-
-    let poses = match_model_multi_scale(
-        &template_mat,
+    let scales = vec![1.0, 0.9, 0.8, 0.7, 0.6, 0.5];
+    let start = std::time::Instant::now();
+    let pyramid = ModelPyramid::train(template_mat.clone(), scales)?;
+    let poses = pyramid.find_best_matches(
         &target_mat,
-        &scales,
         MatchConfig {
-            min_score: 0.9,
+            min_score: 0.8,
             max_count: 50,
             ..Default::default()
         },
+        NmsConfig {
+            iou_threshold: 0.1,
+            score_threshold: 0.0,
+        },
     )?;
+    let duration = start.elapsed();
+    println!("Matching took: {:?}", duration);
 
     println!("matches: {}", poses.len());
     for pose in &poses {
@@ -44,13 +40,8 @@ fn main() -> Result<()> {
     }
 
     let mut output_mat: opencv::core::Mat = img_src.try_into_cv()?;
-    let template_size = template_mat.size()?;
-
     for pose in &poses {
-        let rect_size = opencv::core::Size2f::new(
-            (template_size.width as f64 * pose.scale) as f32,
-            (template_size.height as f64 * pose.scale) as f32,
-        );
+        let rect_size = opencv::core::Size2f::new(pose.pose.width, pose.pose.height);
         let rect = opencv::core::RotatedRect::new(
             opencv::core::Point2f::new(pose.pose.x, pose.pose.y),
             rect_size,

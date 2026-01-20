@@ -6,7 +6,7 @@ use rayon::prelude::*;
 use std::cmp::Ordering;
 use std::f64::consts::PI;
 
-const MIN_AREA: i32 = 256;
+const MIN_AREA: i32 = 128;
 const TOLERANCE: f64 = 0.0000001;
 const CANDIDATE: usize = 5;
 const INVALID: f64 = -1.0;
@@ -604,10 +604,8 @@ fn match_top_level(
         .into_par_iter()
         .try_fold(Vec::new, |mut acc, i| -> Result<Vec<Candidate>> {
             let angle = start_angle + angle_step * i as f64;
-            let mut rotate = get_rotation_matrix_2d(
-                cv::Point2f::new(center.x as f32, center.y as f32),
-                angle,
-            )?;
+            let mut rotate =
+                get_rotation_matrix_2d(cv::Point2f::new(center.x as f32, center.y as f32), angle)?;
             let size = compute_rotation_size(dst_top.size()?, template_size, angle, &rotate)?;
 
             let tx = (size.width as f64 - 1.0) / 2.0 - center.x;
@@ -659,10 +657,7 @@ fn match_top_level(
                     }
 
                     acc.push(Candidate::new(
-                        cv::Point2d::new(
-                            max_pos.x as f64 - offset.x,
-                            max_pos.y as f64 - offset.y,
-                        ),
+                        cv::Point2d::new(max_pos.x as f64 - offset.x, max_pos.y as f64 - offset.y),
                         angle,
                         max_score,
                     ));
@@ -702,10 +697,7 @@ fn match_top_level(
                     }
 
                     acc.push(Candidate::new(
-                        cv::Point2d::new(
-                            max_pos.x as f64 - offset.x,
-                            max_pos.y as f64 - offset.y,
-                        ),
+                        cv::Point2d::new(max_pos.x as f64 - offset.x, max_pos.y as f64 - offset.y),
                         angle,
                         max_score,
                     ));

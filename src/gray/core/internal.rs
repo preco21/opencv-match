@@ -20,10 +20,54 @@ pub struct Pose {
     pub score: f32,
 }
 
+impl Pose {
+    pub fn nms_filter(poses: &[Pose], nms_config: NmsConfig) -> Result<Vec<Pose>> {
+        let keep = Self::nms_filter_indices(poses, nms_config)?;
+        Ok(keep.iter().map(|&idx| poses[idx]).collect())
+    }
+
+    pub(crate) fn nms_filter_indices(poses: &[Pose], nms_config: NmsConfig) -> Result<Vec<usize>> {
+        if poses.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let (boxes, scores) = Self::nms_inputs(poses)?;
+        if boxes.nrows() == 0 {
+            return Ok(Vec::new());
+        }
+
+        Ok(nms(
+            &boxes,
+            &scores,
+            nms_config.iou_threshold,
+            nms_config.score_threshold,
+        ))
+    }
+
+    pub(crate) fn nms_inputs(poses: &[Pose]) -> Result<(nd::Array2<i32>, nd::Array1<f64>)> {
+        let mut boxes = nd::Array2::<i32>::default((0, 4));
+        let mut scores = Vec::with_capacity(poses.len());
+        for pose in poses {
+            let rect = pose_to_box(pose)?;
+            boxes.push(nd::Axis(0), nd::ArrayView::from(&rect)).unwrap();
+            scores.push(pose.score as f64);
+        }
+        Ok((boxes, nd::Array1::from(scores)))
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct ScaledPose {
     pub pose: Pose,
     pub scale: f64,
+}
+
+impl ScaledPose {
+    pub fn nms_filter(poses: &[ScaledPose], nms_config: NmsConfig) -> Result<Vec<ScaledPose>> {
+        let raw_poses: Vec<Pose> = poses.iter().map(|pose| pose.pose).collect();
+        let keep = Pose::nms_filter_indices(&raw_poses, nms_config)?;
+        Ok(keep.iter().map(|&idx| poses[idx]).collect())
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -91,72 +135,6 @@ impl Candidate {
         }
 
         Ok(())
-    }
-}
-
-impl Pose {
-    pub fn nms_filter(poses: &[Pose], nms_config: NmsConfig) -> Result<Vec<Pose>> {
-        if poses.is_empty() {
-            return Ok(Vec::new());
-        }
-
-        let (boxes, scores) = Self::nms_inputs(poses)?;
-        if boxes.nrows() == 0 {
-            return Ok(Vec::new());
-        }
-
-        let keep = nms(
-            &boxes,
-            &scores,
-            nms_config.iou_threshold,
-            nms_config.score_threshold,
-        );
-        Ok(keep.iter().map(|&idx| poses[idx]).collect())
-    }
-
-    pub(crate) fn nms_inputs(poses: &[Pose]) -> Result<(nd::Array2<i32>, nd::Array1<f64>)> {
-        let mut boxes = nd::Array2::<i32>::default((0, 4));
-        let mut scores = Vec::with_capacity(poses.len());
-        for pose in poses {
-            let rect = pose_to_box(pose)?;
-            boxes.push(nd::Axis(0), nd::ArrayView::from(&rect)).unwrap();
-            scores.push(pose.score as f64);
-        }
-        Ok((boxes, nd::Array1::from(scores)))
-    }
-}
-
-impl ScaledPose {
-    pub fn nms_filter(poses: &[ScaledPose], nms_config: NmsConfig) -> Result<Vec<ScaledPose>> {
-        if poses.is_empty() {
-            return Ok(Vec::new());
-        }
-
-        let (boxes, scores) = Self::nms_inputs(poses)?;
-        if boxes.nrows() == 0 {
-            return Ok(Vec::new());
-        }
-
-        let keep = nms(
-            &boxes,
-            &scores,
-            nms_config.iou_threshold,
-            nms_config.score_threshold,
-        );
-        Ok(keep.iter().map(|&idx| poses[idx]).collect())
-    }
-
-    pub(crate) fn nms_inputs(
-        poses: &[ScaledPose],
-    ) -> Result<(nd::Array2<i32>, nd::Array1<f64>)> {
-        let mut boxes = nd::Array2::<i32>::default((0, 4));
-        let mut scores = Vec::with_capacity(poses.len());
-        for pose in poses {
-            let rect = pose_to_box(&pose.pose)?;
-            boxes.push(nd::Axis(0), nd::ArrayView::from(&rect)).unwrap();
-            scores.push(pose.pose.score as f64);
-        }
-        Ok((boxes, nd::Array1::from(scores)))
     }
 }
 
@@ -314,7 +292,10 @@ pub(crate) fn size_area(size: cv::Size) -> i32 {
 }
 
 pub(crate) fn pose_to_box(pose: &Pose) -> Result<[i32; 4]> {
-    ensure!(pose.width > 0.0 && pose.height > 0.0, "pose size is invalid");
+    ensure!(
+        pose.width > 0.0 && pose.height > 0.0,
+        "pose size is invalid"
+    );
     let rect_size = cv::Size2f::new(pose.width, pose.height);
     let rect = cv::RotatedRect::new(cv::Point2f::new(pose.x, pose.y), rect_size, -pose.angle)?;
 

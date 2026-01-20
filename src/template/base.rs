@@ -1,7 +1,7 @@
 use ndarray as nd;
 use opencv::{self as cv, core::MatTraitConst};
 
-use crate::{convert, template::nms::nms};
+use crate::{convert, nms::nms};
 
 #[derive(Debug, Clone)]
 pub struct Template {

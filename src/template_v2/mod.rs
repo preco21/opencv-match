@@ -1,10 +1,13 @@
 use anyhow::{bail, ensure, Result};
+use ndarray as nd;
 use opencv::core::{self as cv, MatTraitConst};
 use opencv::imgproc;
 use opencv::prelude::*;
 use rayon::prelude::*;
 use std::cmp::Ordering;
 use std::f64::consts::PI;
+
+use crate::nms::nms;
 
 const MIN_AREA: i32 = 128;
 const TOLERANCE: f64 = 0.0000001;
@@ -53,6 +56,23 @@ impl Default for MatchConfig {
             min_score: 0.7,
             max_count: 50,
             subpixel: true,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct NmsConfig {
+    /// The threshold for the Intersection over Union (IoU) to use for non-maximum suppression.
+    pub iou_threshold: f64,
+    /// The threshold for the score to use for non-maximum suppression.
+    pub score_threshold: f64,
+}
+
+impl Default for NmsConfig {
+    fn default() -> Self {
+        Self {
+            iou_threshold: 0.0,
+            score_threshold: 0.0,
         }
     }
 }
@@ -230,6 +250,22 @@ impl GrayMatchModel {
         result.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(Ordering::Equal));
         Ok(result)
     }
+
+    pub fn match_model_nms(
+        &self,
+        dst: &cv::Mat,
+        match_config: MatchConfig,
+        nms_config: NmsConfig,
+    ) -> Result<Vec<Pose>> {
+        let poses = self.match_model(dst, match_config)?;
+        if poses.is_empty() {
+            return Ok(poses);
+        }
+
+        ensure!(!self.pyramids.is_empty(), "model has no pyramids");
+        let template_size = self.pyramids[0].size()?;
+        nms_filter_poses(&poses, template_size, nms_config)
+    }
 }
 
 pub fn match_model_multi_scale(
@@ -274,6 +310,130 @@ pub fn match_model_multi_scale(
             .unwrap_or(Ordering::Equal)
     });
     Ok(results)
+}
+
+pub fn match_model_multi_scale_nms(
+    template: &cv::Mat,
+    dst: &cv::Mat,
+    scales: &[f64],
+    match_config: MatchConfig,
+    nms_config: NmsConfig,
+) -> Result<Vec<ScaledPose>> {
+    let results = match_model_multi_scale(template, dst, scales, match_config)?;
+    if results.is_empty() {
+        return Ok(results);
+    }
+
+    let template_size = template.size()?;
+    nms_filter_scaled_poses(&results, template_size, nms_config)
+}
+
+fn nms_filter_poses(
+    poses: &[Pose],
+    template_size: cv::Size,
+    nms_config: NmsConfig,
+) -> Result<Vec<Pose>> {
+    if poses.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let (boxes, scores) = nms_inputs_from_poses(poses, template_size)?;
+    if boxes.nrows() == 0 {
+        return Ok(Vec::new());
+    }
+
+    let keep = nms(
+        &boxes,
+        &scores,
+        nms_config.iou_threshold,
+        nms_config.score_threshold,
+    );
+    Ok(keep.iter().map(|&idx| poses[idx]).collect())
+}
+
+fn nms_filter_scaled_poses(
+    poses: &[ScaledPose],
+    template_size: cv::Size,
+    nms_config: NmsConfig,
+) -> Result<Vec<ScaledPose>> {
+    if poses.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let (boxes, scores) = nms_inputs_from_scaled_poses(poses, template_size)?;
+    if boxes.nrows() == 0 {
+        return Ok(Vec::new());
+    }
+
+    let keep = nms(
+        &boxes,
+        &scores,
+        nms_config.iou_threshold,
+        nms_config.score_threshold,
+    );
+    Ok(keep.iter().map(|&idx| poses[idx]).collect())
+}
+
+fn nms_inputs_from_poses(
+    poses: &[Pose],
+    template_size: cv::Size,
+) -> Result<(nd::Array2<i32>, nd::Array1<f64>)> {
+    let mut boxes = nd::Array2::<i32>::default((0, 4));
+    let mut scores = Vec::with_capacity(poses.len());
+    for pose in poses {
+        let rect = pose_to_box(pose, template_size, 1.0)?;
+        boxes.push(nd::Axis(0), nd::ArrayView::from(&rect)).unwrap();
+        scores.push(pose.score as f64);
+    }
+    Ok((boxes, nd::Array1::from(scores)))
+}
+
+fn nms_inputs_from_scaled_poses(
+    poses: &[ScaledPose],
+    template_size: cv::Size,
+) -> Result<(nd::Array2<i32>, nd::Array1<f64>)> {
+    let mut boxes = nd::Array2::<i32>::default((0, 4));
+    let mut scores = Vec::with_capacity(poses.len());
+    for pose in poses {
+        let rect = pose_to_box(&pose.pose, template_size, pose.scale)?;
+        boxes.push(nd::Axis(0), nd::ArrayView::from(&rect)).unwrap();
+        scores.push(pose.pose.score as f64);
+    }
+    Ok((boxes, nd::Array1::from(scores)))
+}
+
+fn pose_to_box(pose: &Pose, template_size: cv::Size, scale: f64) -> Result<[i32; 4]> {
+    ensure!(scale > 0.0, "scale must be positive");
+    let width = template_size.width as f64 * scale;
+    let height = template_size.height as f64 * scale;
+    ensure!(
+        width > 0.0 && height > 0.0,
+        "scaled template size is invalid"
+    );
+
+    let rect_size = cv::Size2f::new(width as f32, height as f32);
+    let rect = cv::RotatedRect::new(cv::Point2f::new(pose.x, pose.y), rect_size, -pose.angle)?;
+
+    let mut points = [cv::Point2f::new(0.0, 0.0); 4];
+    rect.points(&mut points)?;
+
+    let mut min_x = points[0].x;
+    let mut max_x = points[0].x;
+    let mut min_y = points[0].y;
+    let mut max_y = points[0].y;
+    for point in points.iter().skip(1) {
+        min_x = min_x.min(point.x);
+        max_x = max_x.max(point.x);
+        min_y = min_y.min(point.y);
+        max_y = max_y.max(point.y);
+    }
+
+    Ok([
+        min_x.floor() as i32,
+        min_y.floor() as i32,
+        max_x.ceil() as i32,
+        max_y.ceil() as i32,
+    ])
 }
 
 #[derive(Debug, Clone)]

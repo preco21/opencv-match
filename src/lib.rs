@@ -9,3 +9,5 @@ pub mod convert;
 pub mod prelude;
 
 pub mod template_v2;
+
+pub(crate) mod nms;

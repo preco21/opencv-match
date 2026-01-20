@@ -18,6 +18,8 @@ const INVALID: f64 = -1.0;
 pub struct Pose {
     pub x: f32,
     pub y: f32,
+    pub width: f32,
+    pub height: f32,
     pub angle: f32,
     pub score: f32,
 }
@@ -242,6 +244,8 @@ impl GrayMatchModel {
             result.push(Pose {
                 x: center.x,
                 y: center.y,
+                width: size.width as f32,
+                height: size.height as f32,
                 angle: (-candidate.angle) as f32,
                 score: candidate.score as f32,
             });
@@ -262,9 +266,7 @@ impl GrayMatchModel {
             return Ok(poses);
         }
 
-        ensure!(!self.pyramids.is_empty(), "model has no pyramids");
-        let template_size = self.pyramids[0].size()?;
-        nms_filter_poses(&poses, template_size, nms_config)
+        nms_filter_poses(&poses, nms_config)
     }
 }
 
@@ -324,20 +326,15 @@ pub fn match_model_multi_scale_nms(
         return Ok(results);
     }
 
-    let template_size = template.size()?;
-    nms_filter_scaled_poses(&results, template_size, nms_config)
+    nms_filter_scaled_poses(&results, nms_config)
 }
 
-fn nms_filter_poses(
-    poses: &[Pose],
-    template_size: cv::Size,
-    nms_config: NmsConfig,
-) -> Result<Vec<Pose>> {
+fn nms_filter_poses(poses: &[Pose], nms_config: NmsConfig) -> Result<Vec<Pose>> {
     if poses.is_empty() {
         return Ok(Vec::new());
     }
 
-    let (boxes, scores) = nms_inputs_from_poses(poses, template_size)?;
+    let (boxes, scores) = nms_inputs_from_poses(poses)?;
     if boxes.nrows() == 0 {
         return Ok(Vec::new());
     }
@@ -353,14 +350,13 @@ fn nms_filter_poses(
 
 fn nms_filter_scaled_poses(
     poses: &[ScaledPose],
-    template_size: cv::Size,
     nms_config: NmsConfig,
 ) -> Result<Vec<ScaledPose>> {
     if poses.is_empty() {
         return Ok(Vec::new());
     }
 
-    let (boxes, scores) = nms_inputs_from_scaled_poses(poses, template_size)?;
+    let (boxes, scores) = nms_inputs_from_scaled_poses(poses)?;
     if boxes.nrows() == 0 {
         return Ok(Vec::new());
     }
@@ -374,14 +370,11 @@ fn nms_filter_scaled_poses(
     Ok(keep.iter().map(|&idx| poses[idx]).collect())
 }
 
-fn nms_inputs_from_poses(
-    poses: &[Pose],
-    template_size: cv::Size,
-) -> Result<(nd::Array2<i32>, nd::Array1<f64>)> {
+fn nms_inputs_from_poses(poses: &[Pose]) -> Result<(nd::Array2<i32>, nd::Array1<f64>)> {
     let mut boxes = nd::Array2::<i32>::default((0, 4));
     let mut scores = Vec::with_capacity(poses.len());
     for pose in poses {
-        let rect = pose_to_box(pose, template_size, 1.0)?;
+        let rect = pose_to_box(pose)?;
         boxes.push(nd::Axis(0), nd::ArrayView::from(&rect)).unwrap();
         scores.push(pose.score as f64);
     }
@@ -390,28 +383,20 @@ fn nms_inputs_from_poses(
 
 fn nms_inputs_from_scaled_poses(
     poses: &[ScaledPose],
-    template_size: cv::Size,
 ) -> Result<(nd::Array2<i32>, nd::Array1<f64>)> {
     let mut boxes = nd::Array2::<i32>::default((0, 4));
     let mut scores = Vec::with_capacity(poses.len());
     for pose in poses {
-        let rect = pose_to_box(&pose.pose, template_size, pose.scale)?;
+        let rect = pose_to_box(&pose.pose)?;
         boxes.push(nd::Axis(0), nd::ArrayView::from(&rect)).unwrap();
         scores.push(pose.pose.score as f64);
     }
     Ok((boxes, nd::Array1::from(scores)))
 }
 
-fn pose_to_box(pose: &Pose, template_size: cv::Size, scale: f64) -> Result<[i32; 4]> {
-    ensure!(scale > 0.0, "scale must be positive");
-    let width = template_size.width as f64 * scale;
-    let height = template_size.height as f64 * scale;
-    ensure!(
-        width > 0.0 && height > 0.0,
-        "scaled template size is invalid"
-    );
-
-    let rect_size = cv::Size2f::new(width as f32, height as f32);
+fn pose_to_box(pose: &Pose) -> Result<[i32; 4]> {
+    ensure!(pose.width > 0.0 && pose.height > 0.0, "pose size is invalid");
+    let rect_size = cv::Size2f::new(pose.width, pose.height);
     let rect = cv::RotatedRect::new(cv::Point2f::new(pose.x, pose.y), rect_size, -pose.angle)?;
 
     let mut points = [cv::Point2f::new(0.0, 0.0); 4];

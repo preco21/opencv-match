@@ -207,6 +207,23 @@ pub(crate) fn resize_template(template: &cv::Mat, scale: f64) -> Result<cv::Mat>
     Ok(resized)
 }
 
+pub(crate) fn resize_mask(mask: &cv::Mat, scale: f64) -> Result<cv::Mat> {
+    let width = (mask.cols() as f64 * scale).round() as i32;
+    let height = (mask.rows() as f64 * scale).round() as i32;
+    ensure!(width > 0 && height > 0, "scaled mask size is invalid");
+
+    let mut resized = cv::Mat::default();
+    imgproc::resize(
+        mask,
+        &mut resized,
+        cv::Size::new(width, height),
+        0.0,
+        0.0,
+        imgproc::INTER_NEAREST,
+    )?;
+    Ok(resized)
+}
+
 pub(crate) fn next_max_loc_mat(
     score: &cv::Mat,
     pos: cv::Point,

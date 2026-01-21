@@ -69,6 +69,7 @@ pub struct Model {
     inv_area: Vec<f64>,
     equal1: Vec<bool>,
     border_color: u8,
+    mask_pyramids: Option<Vec<cv::Mat>>,
 }
 
 impl Model {
@@ -76,9 +77,33 @@ impl Model {
         Self::new(template, -1)
     }
 
+    pub fn train_with_mask(template: &cv::Mat, mask: &cv::Mat) -> Result<Self> {
+        Self::new_with_mask(template, mask, -1)
+    }
+
     pub fn new(template: &cv::Mat, level: i32) -> Result<Self> {
+        Self::new_with_optional_mask(template, level, None)
+    }
+
+    pub fn new_with_mask(template: &cv::Mat, mask: &cv::Mat, level: i32) -> Result<Self> {
+        Self::new_with_optional_mask(template, level, Some(mask))
+    }
+
+    fn new_with_optional_mask(
+        template: &cv::Mat,
+        level: i32,
+        mask: Option<&cv::Mat>,
+    ) -> Result<Self> {
         ensure!(!template.empty(), "template image is empty");
         ensure!(template.channels() == 1, "template image must be grayscale");
+        if let Some(mask) = mask {
+            ensure!(!mask.empty(), "mask image is empty");
+            ensure!(mask.channels() == 1, "mask image must be single-channel");
+            ensure!(
+                mask.cols() == template.cols() && mask.rows() == template.rows(),
+                "mask size must match template size"
+            );
+        }
 
         let level = if level <= 0 {
             compute_layers(template.cols(), template.rows(), MIN_AREA)
@@ -99,6 +124,16 @@ impl Model {
 
         let mut pyramids = cv::Vector::<cv::Mat>::new();
         imgproc::build_pyramid_def(template, &mut pyramids, level)?;
+        let base_mask = if let Some(mask) = mask {
+            Some(normalize_mask(mask)?)
+        } else {
+            None
+        };
+        let mut mask_pyramids = if base_mask.is_some() {
+            Some(Vec::with_capacity(pyramids.len()))
+        } else {
+            None
+        };
         let mut model = Model {
             pyramids: Vec::with_capacity(pyramids.len()),
             mean: Vec::with_capacity(pyramids.len()),
@@ -106,20 +141,45 @@ impl Model {
             inv_area: Vec::with_capacity(pyramids.len()),
             equal1: Vec::with_capacity(pyramids.len()),
             border_color: 0,
+            mask_pyramids: None,
         };
 
-        let mean_value = cv::mean(template, &cv::no_array())?.0[0];
+        let mean_value = if let Some(mask) = &base_mask {
+            cv::mean(template, mask)?.0[0]
+        } else {
+            cv::mean(template, &cv::no_array())?.0[0]
+        };
         model.border_color = if mean_value < 128.0 { 255 } else { 0 };
 
         for i in 0..pyramids.len() {
             let pyramid = pyramids.get(i)?;
+            let mask = match (&base_mask, &mut mask_pyramids) {
+                (Some(base_mask), Some(mask_pyramids)) => {
+                    let mut resized = cv::Mat::default();
+                    imgproc::resize(
+                        base_mask,
+                        &mut resized,
+                        pyramid.size()?,
+                        0.0,
+                        0.0,
+                        imgproc::INTER_NEAREST,
+                    )?;
+                    mask_pyramids.push(resized);
+                    mask_pyramids.last().map(|mask| mask.clone())
+                }
+                _ => None,
+            };
 
             let area = (pyramid.rows() * pyramid.cols()) as f64;
             let inv_area: f64 = 1.0 / area;
 
             let mut mean = cv::Scalar::default();
             let mut stddev = cv::Scalar::default();
-            cv::mean_std_dev(&pyramid, &mut mean, &mut stddev, &cv::no_array())?;
+            if let Some(mask) = mask.as_ref() {
+                cv::mean_std_dev(&pyramid, &mut mean, &mut stddev, mask)?;
+            } else {
+                cv::mean_std_dev(&pyramid, &mut mean, &mut stddev, &cv::no_array())?;
+            }
 
             let std_normal = stddev.0[0] * stddev.0[0]
                 + stddev.0[1] * stddev.0[1]
@@ -135,6 +195,7 @@ impl Model {
             model.equal1.push(equal1);
         }
 
+        model.mask_pyramids = mask_pyramids;
         Ok(model)
     }
 
@@ -258,6 +319,16 @@ impl Model {
 
     fn match_template(&self, src: &cv::Mat, level: usize) -> Result<cv::Mat> {
         let mut result = cv::Mat::default();
+        if let Some(masks) = &self.mask_pyramids {
+            imgproc::match_template(
+                src,
+                &self.pyramids[level],
+                &mut result,
+                imgproc::TM_CCOEFF_NORMED,
+                &masks[level],
+            )?;
+            return Ok(result);
+        }
         imgproc::match_template(
             src,
             &self.pyramids[level],
@@ -537,6 +608,26 @@ impl Model {
         level_matched.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(Ordering::Equal));
         Ok(level_matched)
     }
+}
+
+fn normalize_mask(mask: &cv::Mat) -> Result<cv::Mat> {
+    let mask_u8 = if mask.depth() == cv::CV_8U {
+        mask.clone()
+    } else {
+        let mut converted = cv::Mat::default();
+        mask.convert_to(&mut converted, cv::CV_8U, 1.0, 0.0)?;
+        converted
+    };
+
+    let mut binary = cv::Mat::default();
+    imgproc::threshold(
+        &mask_u8,
+        &mut binary,
+        0.0,
+        255.0,
+        imgproc::THRESH_BINARY,
+    )?;
+    Ok(binary)
 }
 
 fn block_update_next_max_loc(

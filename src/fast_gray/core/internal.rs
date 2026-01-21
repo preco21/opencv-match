@@ -12,6 +12,7 @@ pub(crate) const INVALID: f64 = -1.0;
 
 #[derive(Debug, Clone, Copy)]
 pub struct Pose {
+    /// Top-left anchor point of the matched template.
     pub x: f32,
     pub y: f32,
     pub width: f32,
@@ -296,21 +297,32 @@ pub(crate) fn pose_to_box(pose: &Pose) -> Result<[i32; 4]> {
         pose.width > 0.0 && pose.height > 0.0,
         "pose size is invalid"
     );
-    let rect_size = cv::Size2f::new(pose.width, pose.height);
-    let rect = cv::RotatedRect::new(cv::Point2f::new(pose.x, pose.y), rect_size, -pose.angle)?;
+    let angle = pose.angle as f64 * std::f64::consts::PI / 180.0;
+    let cos = angle.cos();
+    let sin = angle.sin();
+    let x0 = pose.x as f64;
+    let y0 = pose.y as f64;
+    let w = pose.width as f64;
+    let h = pose.height as f64;
 
-    let mut points = [cv::Point2f::new(0.0, 0.0); 4];
-    rect.points(&mut points)?;
+    let points = [
+        (0.0, 0.0),
+        (w, 0.0),
+        (w, h),
+        (0.0, h),
+    ];
 
-    let mut min_x = points[0].x;
-    let mut max_x = points[0].x;
-    let mut min_y = points[0].y;
-    let mut max_y = points[0].y;
-    for point in points.iter().skip(1) {
-        min_x = min_x.min(point.x);
-        max_x = max_x.max(point.x);
-        min_y = min_y.min(point.y);
-        max_y = max_y.max(point.y);
+    let mut min_x = f64::INFINITY;
+    let mut max_x = f64::NEG_INFINITY;
+    let mut min_y = f64::INFINITY;
+    let mut max_y = f64::NEG_INFINITY;
+    for (dx, dy) in points {
+        let x = x0 + dx * cos - dy * sin;
+        let y = y0 + dx * sin + dy * cos;
+        min_x = min_x.min(x);
+        max_x = max_x.max(x);
+        min_y = min_y.min(y);
+        max_y = max_y.max(y);
     }
 
     Ok([

@@ -257,12 +257,7 @@ fn crop_template_from_pose(src: &Mat, pose: &super::core::Pose) -> Result<Mat> {
     let height = pose.height.round() as i32;
     ensure!(width > 0 && height > 0, "pose size is invalid");
 
-    let mut rect = core::Rect::new(
-        (pose.x - pose.width / 2.0).round() as i32,
-        (pose.y - pose.height / 2.0).round() as i32,
-        width,
-        height,
-    );
+    let mut rect = core::Rect::new(pose.x.round() as i32, pose.y.round() as i32, width, height);
     if rect.x < 0 {
         rect.width -= -rect.x;
         rect.x = 0;
@@ -279,8 +274,8 @@ fn crop_template_from_pose(src: &Mat, pose: &super::core::Pose) -> Result<Mat> {
     }
     ensure!(rect.width > 0 && rect.height > 0, "cropped template is out of bounds");
 
-    let center = core::Point2f::new(pose.x, pose.y);
-    let rotate = imgproc::get_rotation_matrix_2d(center, -pose.angle as f64, 1.0)?;
+    let anchor = core::Point2f::new(pose.x, pose.y);
+    let rotate = imgproc::get_rotation_matrix_2d(anchor, -pose.angle as f64, 1.0)?;
     let mut rotated = core::Mat::default();
     imgproc::warp_affine(
         src,

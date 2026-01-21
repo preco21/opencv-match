@@ -287,16 +287,16 @@ impl Model {
         Candidate::filter_overlap(&mut level_matched, &rects, config.max_overlap)?;
 
         let mut result = Vec::new();
-        for (candidate, rect) in level_matched.iter().zip(rects.iter()) {
+        for candidate in &level_matched {
             if candidate.score < 0.0 {
                 continue;
             }
 
-            let center = rect.center;
+            let top_left = candidate.pos;
             let angle = normalize_pose_angle(-candidate.angle);
             result.push(Pose {
-                x: center.x,
-                y: center.y,
+                x: top_left.x as f32,
+                y: top_left.y as f32,
                 width: size.width as f32,
                 height: size.height as f32,
                 angle: angle as f32,

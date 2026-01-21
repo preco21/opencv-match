@@ -211,6 +211,10 @@ impl Model {
         &self.pyramids[0]
     }
 
+    pub fn template_mask(&self) -> Option<&cv::Mat> {
+        self.mask_pyramids.as_ref().and_then(|masks| masks.get(0))
+    }
+
     pub fn match_model(&self, dst: &cv::Mat, mut config: MatchConfig) -> Result<Vec<Pose>> {
         ensure!(!dst.empty(), "input image is empty");
         ensure!(dst.channels() == 1, "input image must be grayscale");
@@ -289,12 +293,13 @@ impl Model {
             }
 
             let center = rect.center;
+            let angle = normalize_pose_angle(-candidate.angle);
             result.push(Pose {
                 x: center.x,
                 y: center.y,
                 width: size.width as f32,
                 height: size.height as f32,
-                angle: (-candidate.angle) as f32,
+                angle: angle as f32,
                 score: candidate.score as f32,
             });
         }
@@ -607,6 +612,20 @@ impl Model {
 
         level_matched.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(Ordering::Equal));
         Ok(level_matched)
+    }
+}
+
+fn normalize_pose_angle(angle: f64) -> f64 {
+    let mut angle = angle % 360.0;
+    if angle <= -180.0 {
+        angle += 360.0;
+    } else if angle > 180.0 {
+        angle -= 360.0;
+    }
+    if angle.abs() >= 180.0 {
+        0.0
+    } else {
+        angle
     }
 }
 

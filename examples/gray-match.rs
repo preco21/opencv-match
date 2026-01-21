@@ -40,14 +40,7 @@ fn main() -> Result<()> {
 
     let mut output_mat: opencv::core::Mat = img_src.try_into_cv()?;
     for pose in &poses {
-        let rect_size = opencv::core::Size2f::new(pose.pose.width, pose.pose.height);
-        let rect = opencv::core::RotatedRect::new(
-            opencv::core::Point2f::new(pose.pose.x, pose.pose.y),
-            rect_size,
-            -pose.pose.angle,
-        )?;
-        let mut points = [opencv::core::Point2f::new(0.0, 0.0); 4];
-        rect.points(&mut points)?;
+        let points = pose_points(&pose.pose);
         for i in 0..4 {
             let p1 = points[i];
             let p2 = points[(i + 1) % 4];
@@ -66,4 +59,23 @@ fn main() -> Result<()> {
     image::RgbaImage::try_from_cv(output_mat)?.save("out.png")?;
 
     Ok(())
+}
+
+fn pose_points(pose: &opencv_match::fast_gray::Pose) -> [opencv::core::Point2f; 4] {
+    let angle = pose.angle as f64 * std::f64::consts::PI / 180.0;
+    let cos = angle.cos();
+    let sin = angle.sin();
+    let x0 = pose.x as f64;
+    let y0 = pose.y as f64;
+    let w = pose.width as f64;
+    let h = pose.height as f64;
+
+    let points = [(0.0, 0.0), (w, 0.0), (w, h), (0.0, h)];
+    let mut out = [opencv::core::Point2f::new(0.0, 0.0); 4];
+    for (idx, (dx, dy)) in points.iter().enumerate() {
+        let x = x0 + dx * cos - dy * sin;
+        let y = y0 + dx * sin + dy * cos;
+        out[idx] = opencv::core::Point2f::new(x as f32, y as f32);
+    }
+    out
 }

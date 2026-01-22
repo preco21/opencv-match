@@ -155,7 +155,15 @@ impl ModelPyramid {
 
         let mut bootstrap_config = match_config.clone();
         bootstrap_config.max_count = 1;
-        let bootstrap_matches = self.find_matching_points(input, bootstrap_config)?;
+        let mut bootstrap_matches = self.find_matching_points(input, bootstrap_config.clone())?;
+        if bootstrap_matches.is_empty() {
+            // Adaptive pass needs a seed even if the final threshold is strict.
+            let fallback = (match_config.min_score * 0.5).clamp(0.2, 0.5);
+            if fallback < bootstrap_config.min_score {
+                bootstrap_config.min_score = fallback;
+                bootstrap_matches = self.find_matching_points(input, bootstrap_config)?;
+            }
+        }
         if bootstrap_matches.is_empty() {
             return Ok(bootstrap_matches);
         }

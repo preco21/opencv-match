@@ -616,13 +616,14 @@ impl Model {
 }
 
 fn normalize_pose_angle(angle: f64) -> f64 {
+    const NEAR_180_TOLERANCE: f64 = 2.0;
     let mut angle = angle % 360.0;
     if angle <= -180.0 {
         angle += 360.0;
     } else if angle > 180.0 {
         angle -= 360.0;
     }
-    if angle.abs() >= 180.0 {
+    if (angle.abs() - 180.0).abs() <= NEAR_180_TOLERANCE {
         0.0
     } else {
         angle

@@ -6,5 +6,6 @@ pub mod cv_convert;
 pub mod fast_gray;
 pub mod prelude;
 pub mod scale;
+pub mod v2;
 
 pub(crate) mod nms;

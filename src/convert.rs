@@ -9,7 +9,7 @@ pub fn mat_to_array2(mat: &cv::core::Mat) -> Result<nd::Array2<f32>> {
     Ok(flatten)
 }
 
-pub fn mat_to_grayscale(mat: &cv::core::Mat, rgba_color_space: bool) -> Result<cv::core::Mat> {
+pub fn mat_to_grayscale(mat: &cv::core::Mat, rgb_color_space: bool) -> Result<cv::core::Mat> {
     let channels = mat.channels();
     if channels == 1 {
         // Mat is already grayscale, no need to convert.
@@ -19,14 +19,14 @@ pub fn mat_to_grayscale(mat: &cv::core::Mat, rgba_color_space: bool) -> Result<c
     let mut res = cv::core::Mat::default();
     let code = match channels {
         3 => {
-            if rgba_color_space {
+            if rgb_color_space {
                 cv::imgproc::COLOR_RGB2GRAY
             } else {
                 cv::imgproc::COLOR_BGR2GRAY
             }
         }
         4 => {
-            if rgba_color_space {
+            if rgb_color_space {
                 cv::imgproc::COLOR_RGBA2GRAY
             } else {
                 cv::imgproc::COLOR_BGRA2GRAY

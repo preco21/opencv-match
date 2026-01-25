@@ -1,7 +1,7 @@
 use anyhow::{bail, ensure, Result};
 use ndarray as nd;
-use opencv::{self as cv, core::MatTraitConst, prelude::*, core::CV_32F};
 use opencv::imgproc;
+use opencv::{self as cv, core::MatTraitConst, core::CV_32F, prelude::*};
 use rayon::prelude::*;
 
 use crate::nms::nms;
@@ -68,7 +68,10 @@ impl ScaleConfig {
             scales.clone()
         } else {
             ensure!(self.steps > 0, "scale steps must be > 0");
-            ensure!(self.min > 0.0 && self.max > 0.0, "scale range must be positive");
+            ensure!(
+                self.min > 0.0 && self.max > 0.0,
+                "scale range must be positive"
+            );
 
             if (self.max - self.min).abs() <= TOLERANCE {
                 vec![self.min]
@@ -145,7 +148,12 @@ pub struct TemplateMatch {
 impl TemplateMatch {
     pub fn calc_nms_indices(results: &[TemplateMatch], config: NmsConfig) -> Vec<usize> {
         let (boxes, scores) = Self::calc_nms_scores(results);
-        nms(&boxes, &scores, config.iou_threshold, config.score_threshold)
+        nms(
+            &boxes,
+            &scores,
+            config.iou_threshold,
+            config.score_threshold,
+        )
     }
 
     pub fn calc_nms_scores(results: &[TemplateMatch]) -> (nd::Array2<i32>, nd::Array1<f64>) {
@@ -343,7 +351,11 @@ impl TemplateModel {
         }
     }
 
-    pub fn match_all_base(&self, input: &cv::core::Mat, threshold: f32) -> Result<Vec<TemplateMatch>> {
+    pub fn match_all_base(
+        &self,
+        input: &cv::core::Mat,
+        threshold: f32,
+    ) -> Result<Vec<TemplateMatch>> {
         ensure_compatible(input, &self.source_template)?;
 
         let matches = self
@@ -380,7 +392,11 @@ impl TemplateModel {
         apply_nms_and_limit(matches, self.nms, self.max_matches)
     }
 
-    pub fn match_all_raw(&self, input: &cv::core::Mat, threshold: f32) -> Result<Vec<TemplateMatch>> {
+    pub fn match_all_raw(
+        &self,
+        input: &cv::core::Mat,
+        threshold: f32,
+    ) -> Result<Vec<TemplateMatch>> {
         ensure_compatible(input, &self.source_template)?;
 
         let matches = self
@@ -415,7 +431,11 @@ impl TemplateModel {
             })?;
 
         let mut matches = matches;
-        matches.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        matches.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         Ok(matches)
     }
 
@@ -425,7 +445,10 @@ impl TemplateModel {
         adaptive: AdaptiveConfig,
     ) -> Result<Vec<TemplateMatch>> {
         ensure_compatible(input, &self.source_template)?;
-        ensure!(!adaptive.scales.is_empty(), "adaptive scales must not be empty");
+        ensure!(
+            !adaptive.scales.is_empty(),
+            "adaptive scales must not be empty"
+        );
 
         let mut bootstrap = self.match_all_raw(input, self.threshold)?;
         if bootstrap.is_empty() {
@@ -436,10 +459,11 @@ impl TemplateModel {
             }
         }
 
-        let best = match bootstrap
-            .iter()
-            .max_by(|a, b| a.score.partial_cmp(&b.score).unwrap_or(std::cmp::Ordering::Equal))
-        {
+        let best = match bootstrap.iter().max_by(|a, b| {
+            a.score
+                .partial_cmp(&b.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        }) {
             Some(best) => best.clone(),
             None => return Ok(Vec::new()),
         };
@@ -494,13 +518,7 @@ fn score_mode(method: i32) -> Result<ScoreMode> {
 }
 
 fn mask_supported(method: i32) -> bool {
-    matches!(
-        method,
-        imgproc::TM_SQDIFF
-            | imgproc::TM_SQDIFF_NORMED
-            | imgproc::TM_CCORR
-            | imgproc::TM_CCORR_NORMED
-    )
+    matches!(method, imgproc::TM_SQDIFF | imgproc::TM_CCORR_NORMED)
 }
 
 fn build_levels(
@@ -550,7 +568,11 @@ fn build_levels(
         .collect::<Result<Vec<_>>>()?;
 
     let mut levels = levels;
-    levels.sort_by(|a, b| a.scale.partial_cmp(&b.scale).unwrap_or(std::cmp::Ordering::Equal));
+    levels.sort_by(|a, b| {
+        a.scale
+            .partial_cmp(&b.scale)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     ensure!(!levels.is_empty(), "no valid pyramid levels generated");
     Ok(levels)
 }
@@ -683,7 +705,11 @@ fn apply_nms_and_limit(
 
     let keep = TemplateMatch::calc_nms_indices(&matches, nms_config);
     let mut filtered = keep.iter().map(|&i| matches[i].clone()).collect::<Vec<_>>();
-    filtered.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    filtered.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     if let Some(limit) = max_matches {
         filtered.truncate(limit);
@@ -714,7 +740,10 @@ fn crop_template_from_match(src: &cv::core::Mat, result: &TemplateMatch) -> Resu
     if rect.y + rect.height > size.height {
         rect.height = size.height - rect.y;
     }
-    ensure!(rect.width > 0 && rect.height > 0, "cropped template is out of bounds");
+    ensure!(
+        rect.width > 0 && rect.height > 0,
+        "cropped template is out of bounds"
+    );
 
     let roi = src.roi(rect)?;
     Ok(roi.clone_pointee())

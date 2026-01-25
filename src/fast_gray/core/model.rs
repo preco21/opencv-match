@@ -294,9 +294,17 @@ impl Model {
 
             let top_left = candidate.pos;
             let angle = normalize_pose_angle(-candidate.angle);
+            let center = anchor_center(
+                top_left,
+                size.width as f64,
+                size.height as f64,
+                angle,
+            );
             result.push(Pose {
                 x: top_left.x as f32,
                 y: top_left.y as f32,
+                cx: center.x as f32,
+                cy: center.y as f32,
                 width: size.width as f32,
                 height: size.height as f32,
                 angle: angle as f32,
@@ -616,18 +624,25 @@ impl Model {
 }
 
 fn normalize_pose_angle(angle: f64) -> f64 {
-    const NEAR_180_TOLERANCE: f64 = 2.0;
+    const NEAR_ZERO_TOLERANCE: f64 = 1e-6;
     let mut angle = angle % 360.0;
-    if angle <= -180.0 {
+    if angle < 0.0 {
         angle += 360.0;
-    } else if angle > 180.0 {
-        angle -= 360.0;
     }
-    if (angle.abs() - 180.0).abs() <= NEAR_180_TOLERANCE {
+    if angle.abs() <= NEAR_ZERO_TOLERANCE || (angle - 360.0).abs() <= NEAR_ZERO_TOLERANCE {
         0.0
     } else {
         angle
     }
+}
+
+fn anchor_center(anchor: cv::Point2d, width: f64, height: f64, angle_deg: f64) -> cv::Point2d {
+    let angle = angle_deg * std::f64::consts::PI / 180.0;
+    let cos = angle.cos();
+    let sin = angle.sin();
+    let dx = width / 2.0;
+    let dy = height / 2.0;
+    cv::Point2d::new(anchor.x + dx * cos - dy * sin, anchor.y + dx * sin + dy * cos)
 }
 
 fn normalize_mask(mask: &cv::Mat) -> Result<cv::Mat> {

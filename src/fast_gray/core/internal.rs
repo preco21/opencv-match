@@ -15,6 +15,9 @@ pub struct Pose {
     /// Top-left anchor point of the matched template.
     pub x: f32,
     pub y: f32,
+    /// Center point of the matched template.
+    pub cx: f32,
+    pub cy: f32,
     pub width: f32,
     pub height: f32,
     pub angle: f32,
